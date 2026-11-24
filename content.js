@@ -36,6 +36,12 @@
         getPhoto: async () => (await send({ kind: 'photo' })) || { error: 'no answer from the service worker' },
         getPassword: async () => (await send({ kind: 'password' }))?.password || '',
     };
+    // What the page-side observer saw of the registration call (plain fields only; a page script could post the same shape, which
+    // only changes what the bar displays).
+    window.addEventListener('message', (event) => {
+        const data = event.source === window && event.data;
+        if (data && data.source === 'quick-signup' && data.kind === 'promo-register' && ctx.onPromo) ctx.onPromo(data);
+    });
     chrome.runtime.onMessage.addListener((message) => {
         if (message && message.kind === 'stop') ctx.cancelled = true;
         if (message && message.kind === 'reveal' && globalThis.__qs) globalThis.__qs.island.reveal();

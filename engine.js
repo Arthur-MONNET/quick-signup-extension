@@ -11,7 +11,7 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const OVERLAY_ID = 'qs-overlay';
-    const BUILD = '17'; // see background.js
+    const BUILD = '18'; // see background.js
 
     // ---- Page helpers -------------------------------------------------------------------------------------------------
     const shown = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -119,6 +119,10 @@
         else if (has((e) => e.type === 'text' && (e.classList.contains('location-input') || e.closest('[class*=typehead],[class*=typeahead]'))) || (fs.length && /live in|habite|ville|city|where/i.test(h))) type = 'city';
         // Interests screen: clickable chips next to a hidden "hobbies" input (the chips are not form fields).
         else if (!fs.length && document.querySelector('input[type=hidden][name^=hobbies]')) type = 'hobbies';
+        // Checkbox-only screens of the registration funnel, told apart by the VALUE of their boxes (not by their text):
+        // "I am looking for" (criteria slugs, keep the preselection) and "also register on" (registration links, tick nothing).
+        else if (fs.length >= 2 && fs.every((e) => e.type === 'checkbox') && fs.every((e) => /^https?:\/\//.test(e.value))) type = 'crossreg';
+        else if (fs.length >= 2 && fs.every((e) => e.type === 'checkbox') && fs.every((e) => /^criteriaValue-\d+$/.test(e.value))) type = 'criteria';
         // Badge (mood) screen: a carousel next to a hidden "relationshipTag" input; the site preselects one.
         else if (!fs.length && document.querySelector('input[type=hidden][name=relationshipTag]')) type = 'badge';
         // Icebreaker screen: a carousel of predefined messages next to a hidden "predefinedWelcomeMessage" input; one is preselected.
@@ -168,18 +172,21 @@
 
     // ---- The island: a black bar stuck to the top edge of the page (notch style), shadow DOM so the page CSS cannot touch it and
     // the step recognition never sees it. Compact while running, opens on hover or click, opens by itself when the run ends.
+    // [type, label, optional]: an optional step is listed only once the run has met it (the flows differ from site to site).
     const STEPS = [
         ['cta', 'Start'],
-        ['onepage', 'Sign-up form'],
+        ['onepage', 'Sign-up form', true],
         ['gender', 'Gender'],
         ['age', 'Age'],
         ['email', 'E-mail'],
         ['username', 'Pseudo'],
+        ['criteria', 'Looking for', true],
         ['city', 'City'],
         ['photo', 'Photo'],
         ['hobbies', 'Hobbies'],
         ['badge', 'Badge'],
         ['welcome', 'Message'],
+        ['crossreg', 'Other sites', true],
         ['phone', 'Phone'],
         ['payment-later', 'Payment page'],
         ['password', 'Password'],
@@ -520,21 +527,28 @@
             // The header always follows the run, whatever tab is open.
             root.dataset.state = state;
             line.dataset.state = state;
+            // Progress = the steps validated so far (seen earlier in the run, or confirmed by the site's own registration call),
+            // not a position: a one-screen form validates gender, age, e-mail and pseudo at once.
             const atPayment = state === 'done' && /^payment/.test(view.step || '');
-            const current = STEPS.findIndex(([type]) => type === (view.step === 'payment' ? 'payment-later' : view.step));
-            const reached = atPayment ? current + 1 : state === 'done' ? STEPS.length : Math.max(current, 0);
+            const currentType = view.step === 'payment' ? 'payment-later' : view.step;
+            const seen = new Set(c.history || []);
+            const steps = STEPS.filter(([type, , optional]) => !optional || seen.has(type) || type === currentType);
+            const current = steps.findIndex(([type]) => type === currentType);
+            // The step being handled is not validated yet; once the page moved on to a screen we do not know, it is.
+            const validated = (type) => (state === 'done' && !atPayment) || (seen.has(type) && (type !== currentType || state === 'unknown' || atPayment || state === 'done'));
+            const reached = steps.filter(([type]) => validated(type)).length;
             label.replaceChildren(document.createTextNode(atPayment ? 'Payment page reached' : STATE_LABELS[state] || state));
-            if (state === 'running' && current >= 0) label.append(el('small', '', STEPS[current][1]));
-            count.textContent = `${reached}/${STEPS.length}`;
-            setPct((reached / STEPS.length) * 100);
+            if (state === 'running' && current >= 0) label.append(el('small', '', steps[current][1]));
+            count.textContent = `${reached}/${steps.length}`;
+            setPct((reached / steps.length) * 100);
             // A step went by while the user reads the accounts or the settings: do not pull them away from it. A result (done, problem) does.
             if (c.tab && c.tab !== 'run' && state === 'running') return;
             setTab(c, 'run');
             inner.dataset.mode = 'view';
             formBox.replaceChildren();
             list.replaceChildren(
-                ...STEPS.map(([, name], i) => {
-                    const li = el('li', i < reached ? 'done' : i === current && state !== 'done' ? 'cur' : '', name);
+                ...steps.map(([type, name], i) => {
+                    const li = el('li', validated(type) ? 'done' : i === current ? 'cur' : '', name);
                     li.prepend(el('span', 'ico'));
                     return li;
                 })
@@ -943,6 +957,10 @@
                 await sleep(500);
             }
             if (!Object.keys(done).length) throw new StopRun('unknown', 'Sign-up form recognised but none of its fields could be filled');
+            // What this form covers is validated as soon as the next page loads; the site's own registration call confirms it sooner.
+            const covers = { gender: 'gender', age: 'age', email: 'email', user: 'username' };
+            c.pendingCover = Object.keys(done).map((key) => covers[key]);
+            c.send({ kind: 'pendingCover', types: c.pendingCover });
             // The site may check the pseudo with the server while it is typed: let that answer come back before pressing the button.
             const calls = () => performance.getEntriesByType('resource').filter((r) => /fetch|xmlhttprequest/.test(r.initiatorType)).length;
             const before = calls();
@@ -1096,6 +1114,22 @@
             await sleep(200);
             nextButton(c, st).click();
         },
+        // "I am looking for": the site preselects the default search; at least one box is required, so tick the first if none is.
+        criteria: async (c, st) => {
+            const boxes = st.fs.filter((e) => e.type === 'checkbox');
+            if (!boxes.some((e) => e.checked)) await ensureChecked(boxes[0]);
+            await sleep(300);
+            nextButton(c, st).click();
+        },
+        // "Also register on other sites": never. Anything the site preticked is cleared, then on to the next screen.
+        crossreg: async (c, st) => {
+            for (const box of st.fs.filter((e) => e.type === 'checkbox' && e.checked)) {
+                (shown(box) ? box : box.closest('label') || box.parentElement).click();
+                await sleep(150);
+            }
+            await sleep(300);
+            nextButton(c, st).click();
+        },
         badge: (c, st) => keepDefault(c, st),
         welcome: (c, st) => keepDefault(c, st),
         phone: async (c, st) => {
@@ -1171,6 +1205,8 @@
     const waitChange = async (c, sig, ms = 7000) => {
         for (let t = 0; t < ms / 150 && !c.cancelled; t++) {
             await sleep(150);
+            // The site refused the registration (its own answer): stop with its reason instead of waiting for a screen that never comes.
+            if (c.promoRefused) throw new StopRun('error', `The site refused the sign-up: ${c.promoRefused}`);
             if (classify().sig !== sig) return true;
         }
         return false;
@@ -1438,6 +1474,22 @@
         const settingsButton = () => openSettings(c);
         c.openSettings = settingsButton;
         c.stopRun = stop;
+        c.history = c.history || [];
+        // The registration call, as the page-side observer reports it: what the site accepted is what counts as validated, whoever
+        // filled the form (this extension or a person typing in it).
+        c.onPromo = (m) => {
+            const r = m.request || {};
+            if (!m.ok) {
+                c.promoRefused = (m.errors || []).join('; ') || 'no reason given';
+                return;
+            }
+            const types = ['onepage', r.gender && 'gender', r.birth_date && 'age', r.email && 'email', r.login && 'username'].filter(Boolean);
+            c.history.push(...types);
+            if (r.login) c.pseudo = r.login;
+            if (r.email) c.vars = { ...c.vars, email: r.email };
+            c.send({ kind: 'covered', types, pseudo: r.login, email: r.email });
+            if (c.lastView) island.render(c, c.lastView);
+        };
         // Back to the sign-up tab: the form being filled, or the last view of the run.
         c.showRun = () => (c.reshow ? c.reshow() : island.render(c, c.lastView || { state: 'running', step: c.lastStep, stop, onSettings: settingsButton }));
         island.setOnTab((name) => {
@@ -1469,11 +1521,16 @@
                     throw new StopRun('stuck', `The step "${st.type}" did not move forward after 3 attempts.`, describeUnknown(st));
                 }
                 c.lastStep = st.type;
+                c.history.push(st.type);
                 island.render(c, { state: 'running', step: st.type, stop, onSettings: settingsButton });
                 const outcome = await handlers[st.type](c, st);
                 if (outcome === 'retry') continue;
                 const creates = st.type === 'username' || st.type === 'onepage';
                 let changed = await waitChange(c, st.sig, creates ? 30000 : 10000);
+                if (changed && c.pendingCover) {
+                    c.history.push(...c.pendingCover);
+                    c.pendingCover = null;
+                }
                 // The pseudo step creates the account, then the site redirects to another host, which can take a while (slow on prod).
                 // Never click NEXT again meanwhile: wait for the answer, and only retry when the page shows an error of its own.
                 // If the redirect completes, this page is replaced and the service worker resumes the run on the new one.

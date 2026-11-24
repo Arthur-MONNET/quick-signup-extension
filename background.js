@@ -7,7 +7,7 @@ const local = chrome.storage.local;
 const session = chrome.storage.session;
 const LOG_LIMIT = 40;
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
-const BUILD = '17';
+const BUILD = '18';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
 const ACTIVE = ['setup', 'choose', 'running'];
 
@@ -84,12 +84,76 @@ const finishRun = async (tabId, status, message, unknown, blockedHost) => {
     });
 };
 
+// Runs in the page itself (MAIN world), so it must not use anything from this file. It watches the promotool registration call
+// (https://promo*.afcontent.net/<n>/api: a JSON POST with gender, e-mail, login, birth_date, answered with result.result and
+// result.member) and tells the extension what the site really accepted, whoever filled the form: the extension or a person.
+// Only a few plain fields leave it: never the tracking block, and never the auto-login link that the answer carries.
+const netHook = () => {
+    if (window.__qsNet) return;
+    window.__qsNet = true;
+    const interesting = (url) => /^https:\/\/[^/]*afcontent\.net\/\d+\/api(\?|$)/.test(url);
+    const plain = (o, keys) => Object.fromEntries(keys.filter((k) => o && o[k] !== undefined && o[k] !== null && typeof o[k] !== 'object').map((k) => [k, String(o[k]).slice(0, 120)]));
+    const report = (requestText, answerText) => {
+        try {
+            const request = JSON.parse(requestText);
+            let answer = {};
+            try {
+                answer = JSON.parse(answerText);
+            } catch {
+                answer = {};
+            }
+            const result = (answer && answer.result) || {};
+            window.postMessage(
+                {
+                    source: 'quick-signup',
+                    kind: 'promo-register',
+                    request: plain(request, ['gender', 'email', 'login', 'birth_date', 'site_id', 'channel_id']),
+                    ok: result.result === true,
+                    errors: Array.isArray(result.errors) ? result.errors.slice(0, 5).map((e) => String(typeof e === 'object' ? JSON.stringify(e) : e).slice(0, 160)) : [],
+                    memberId: result.member && Number(result.member.id) ? Number(result.member.id) : 0,
+                },
+                '*'
+            );
+        } catch {
+            // not the call we look for
+        }
+    };
+    const nativeFetch = window.fetch;
+    window.fetch = function (input, init) {
+        const promise = nativeFetch.apply(this, arguments);
+        try {
+            const url = typeof input === 'string' ? input : input && input.url;
+            const body = init && typeof init.body === 'string' ? init.body : null;
+            if (url && body && interesting(new URL(url, location.href).href)) promise.then((response) => response.clone().text().then((text) => report(body, text))).catch(() => undefined);
+        } catch {
+            // never break the page
+        }
+        return promise;
+    };
+    const nativeOpen = XMLHttpRequest.prototype.open;
+    const nativeSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url) {
+        this.__qsUrl = String(url);
+        return nativeOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function (body) {
+        try {
+            if (this.__qsUrl && typeof body === 'string' && interesting(new URL(this.__qsUrl, location.href).href)) this.addEventListener('load', () => report(body, this.responseText));
+        } catch {
+            // never break the page
+        }
+        return nativeSend.apply(this, arguments);
+    };
+};
+
 // soft: an early attempt (the page is still loading): a failure is ignored, a later event tries again.
 const inject = async (tabId, soft = false) => {
     const started = Date.now();
     for (let attempt = 0; attempt < (soft ? 1 : 2); attempt++) {
         try {
             await chrome.scripting.executeScript({ target: { tabId }, files: ['engine.js', 'content.js'] });
+            // The page-side observer of the registration call (once per page: it guards itself).
+            chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: netHook }).catch(() => undefined);
             return;
         } catch (err) {
             if (soft) return;
@@ -346,6 +410,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         r.engine = message.from || null;
                         r.helloAt = Date.now();
                     });
+                    if (run.pendingCover && run.pendingCover.length) {
+                        const covered = run.pendingCover;
+                        await updateRun(tabId, (r) => {
+                            r.log = [...r.log, ...covered.map((type) => ({ t: Date.now(), type, fp: 'form', route: 'next-page', note: 'filled in the previous screen' }))].slice(-LOG_LIMIT);
+                            r.pendingCover = [];
+                        });
+                        Object.assign(run, (await getRun(tabId)) || {});
+                    }
                     const { journeys = {} } = await local.get('journeys');
                     return {
                         resume: true,
@@ -390,9 +462,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     return {};
                 case 'vars':
                     await updateRun(tabId, (r) => {
-                        r.pseudo = message.pseudo;
+                        if (message.pseudo) r.pseudo = String(message.pseudo).slice(0, 60);
                     });
                     return {};
+                case 'pendingCover':
+                    // What a form just filled: confirmed when the next page loads (the submit went through): see 'hello'.
+                    await updateRun(tabId, (r) => {
+                        r.pendingCover = (Array.isArray(message.types) ? message.types : []).filter((t) => ['gender', 'age', 'email', 'username'].includes(t));
+                    });
+                    return {};
+                case 'covered': {
+                    // Steps the site itself confirmed (its registration call): logged like steps seen, so every later page knows them.
+                    const known = ['onepage', 'gender', 'age', 'email', 'username'];
+                    const types = (Array.isArray(message.types) ? message.types : []).filter((t) => known.includes(t));
+                    await updateRun(tabId, (r) => {
+                        r.log = [...r.log, ...types.map((type) => ({ t: Date.now(), type, fp: 'api', route: 'promo-api', note: 'confirmed by the site' }))].slice(-LOG_LIMIT);
+                        if (message.pseudo) r.pseudo = String(message.pseudo).slice(0, 60);
+                        if (message.email) r.vars = { ...r.vars, email: String(message.email).slice(0, 120) };
+                    });
+                    return {};
+                }
                 case 'finish':
                     await finishRun(tabId, message.status, message.message, message.unknown);
                     return {};
