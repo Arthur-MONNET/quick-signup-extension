@@ -1,14 +1,14 @@
 // Service worker: starts a run (click on the icon or keyboard shortcut), keeps the per-tab run state in chrome.storage.session
 // (survives the worker sleeping and page redirects, cleared when the browser closes), re-injects the engine after every
 // full page load while a run is active, and remembers the journeys seen per site in chrome.storage.local.
-import { DEFAULT_SETTINGS, PHOTO_ORIGIN, accountId, buildEmail, citySuggestionPattern, decodeJwt, isHostAllowed, loginLink, looksLikeJwt, normalizeHost, photoQuery, publicAccount, randomProfile, safeColor, siteKeyOf, upsertAccount } from './shared.js';
+import { DEFAULT_FORMAT_ID, DEFAULT_SETTINGS, cleanFormats, renderEmail, validateTemplate, PHOTO_ORIGIN, accountId, buildEmail, citySuggestionPattern, decodeJwt, isHostAllowed, loginLink, looksLikeJwt, normalizeHost, photoQuery, publicAccount, randomProfile, safeColor, siteKeyOf, upsertAccount } from './shared.js';
 
 const local = chrome.storage.local;
 const session = chrome.storage.session;
 const LOG_LIMIT = 40;
 const MEDIA_BLUR_MENU = 'toggle-media-blur';
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
-const BUILD = '21';
+const BUILD = '22';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
 const ACTIVE = ['setup', 'choose', 'running'];
 
@@ -18,7 +18,9 @@ const runKey = (tabId) => `run:${tabId}`;
 const getSettings = async () => {
     const stored = (await local.get('settings')).settings || {};
     // Every web page is allowed: the pattern '*' makes each host check pass (only non-web pages, such as the browser's own, are refused).
-    return { ...DEFAULT_SETTINGS, ...stored, allowedHosts: ['*'] };
+    const emailFormats = cleanFormats(stored.emailFormats);
+    const defaultFormatId = emailFormats.some((f) => f.id === stored.defaultFormatId) ? stored.defaultFormatId : DEFAULT_FORMAT_ID;
+    return { ...DEFAULT_SETTINGS, ...stored, emailFormats, defaultFormatId, allowedHosts: ['*'] };
 };
 const getPrefs = async () => ({ fillPassword: true, gender: 'man', usePhoto: true, stopAtPayment: false, ...((await local.get('prefs')).prefs || {}) });
 const getRun = async (tabId) => (await session.get(runKey(tabId)))[runKey(tabId)] || null;
@@ -294,7 +296,8 @@ const saveAccount = async (message, sender) => {
             createdAt: Number.isFinite(created) && created > 1e12 && created <= Date.now() ? created : undefined,
             source: message.source === 'captured' ? 'captured' : 'created',
         });
-        return { ok: true, isNew, count: state.accounts.length };
+        const saved = state.accounts.find((a) => a.id === id);
+        return { ok: true, isNew, count: state.accounts.length, account: saved ? publicAccount(saved, state.brands[host]) : null };
     });
 };
 
@@ -363,12 +366,39 @@ const startRun = async (tabId) => {
 // Domain and password: set once, global to every site, changed only by the user.
 const handleSettings = async (message, tabId, run) => {
     const current = await getSettings();
-    if (message.kind === 'settings') return { emailDomain: current.emailDomain, hasPassword: Boolean(current.password) };
+    const formatsView = (settings) => ({ emailFormats: settings.emailFormats.map((f) => ({ ...f, example: renderEmail(f.template, settings.emailDomain || 'example.com') })), defaultFormatId: settings.defaultFormatId });
+    if (message.kind === 'settings') return { emailDomain: current.emailDomain, hasPassword: Boolean(current.password), ...formatsView(current) };
+    if (message.kind === 'previewFormat') {
+        const problem = validateTemplate(message.template, current.emailDomain || 'example.com');
+        return problem ? { error: problem } : { example: renderEmail(message.template, current.emailDomain || 'example.com') };
+    }
+    if (message.kind === 'saveFormats') {
+        // Saved at once from the bar (no Save button): the whole list and the default one.
+        const list = (Array.isArray(message.emailFormats) ? message.emailFormats : []).map((f) => ({ id: String(f.id || ''), name: String(f.name || ''), template: String(f.template || '') }));
+        for (const f of list) {
+            const problem = !f.name.trim() ? 'Give each format a name.' : validateTemplate(f.template, current.emailDomain || 'example.com');
+            if (problem) return { ok: false, error: `${f.name || 'Format'}: ${problem}` };
+        }
+        const cleaned = cleanFormats(list);
+        const stored = (await local.get('settings')).settings || {};
+        await local.set({ settings: { ...stored, emailFormats: cleaned, defaultFormatId: cleaned.some((f) => f.id === message.defaultFormatId) ? message.defaultFormatId : DEFAULT_FORMAT_ID } });
+        return { ok: true };
+    }
     const domain = normalizeHost(message.emailDomain || current.emailDomain);
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) return { ok: false, error: 'Enter a valid domain, for example mailbox.example.com.' };
     const password = message.password ? String(message.password) : current.password;
     const stored = (await local.get('settings')).settings || {};
-    await local.set({ settings: { ...stored, emailDomain: domain, password } });
+    let formats = {};
+    if (Array.isArray(message.emailFormats)) {
+        const list = message.emailFormats.map((f) => ({ id: String(f.id || ''), name: String(f.name || ''), template: String(f.template || '') }));
+        for (const f of list) {
+            const problem = !f.name.trim() ? 'Give each format a name.' : validateTemplate(f.template, domain);
+            if (problem) return { ok: false, error: `${f.name || 'Format'}: ${problem}` };
+        }
+        const cleaned = cleanFormats(list);
+        formats = { emailFormats: cleaned, defaultFormatId: cleaned.some((f) => f.id === message.defaultFormatId) ? message.defaultFormatId : DEFAULT_FORMAT_ID };
+    }
+    await local.set({ settings: { ...stored, emailDomain: domain, password, ...formats } });
     if (run && run.status === 'setup') {
         await updateRun(tabId, (r) => {
             r.status = 'choose';
@@ -391,7 +421,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             const run = await getRun(tabId);
             // The settings (domain, password) are global and reachable from any allowed page, run active or not.
-            if (['settings', 'saveSettings'].includes(message.kind)) {
+            if (['settings', 'saveSettings', 'saveFormats', 'previewFormat'].includes(message.kind)) {
                 if (!isHostAllowed(hostOf(sender.tab.url || sender.url), (await getSettings()).allowedHosts)) return { ok: false, error: 'This host is not allowed.' };
                 return handleSettings(message, tabId, run);
             }
@@ -533,7 +563,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const profile = randomProfile();
                     await updateRun(tabId, (r) => {
                         Object.assign(r, choice, { age: profile.age, city: profile.city, citySuggestion: citySuggestionPattern(profile.city) });
-                        r.vars = { email: buildEmail(current.emailDomain) };
+                        const format = current.emailFormats.find((f) => f.id === message.formatId) || current.emailFormats.find((f) => f.id === current.defaultFormatId);
+                        r.vars = { email: buildEmail(current.emailDomain, format.template) };
                         r.status = 'running';
                         vars = r.vars;
                     });

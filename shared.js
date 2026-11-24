@@ -3,6 +3,8 @@
 // The extension works on any web page you start it on (manifest <all_urls>): there is no list of hosts and no options page.
 export const DEFAULT_SETTINGS = {
     emailDomain: '', // set once in the bar (Settings), never in the code
+    emailFormats: [], // see cleanFormats: the default format is always added
+    defaultFormatId: 'default',
     password: '', // set once in the bar (Settings), never in the code, never logged
 };
 
@@ -56,7 +58,50 @@ const randomChars = (length) => {
     return [...buffer].map((n) => alphabet[n % alphabet.length]).join('');
 };
 
-export const buildEmail = (domain, date = new Date()) => `${EMAIL_PREFIX}-${ddmm(date)}-${hhmm(date)}-${randomChars(3)}@${normalizeHost(domain)}`;
+// E-mail formats: a template with tokens, so every address is unique and recognisable. {ddmm} {hhmm} {rand3} {rand:N} {domain}.
+// A template without "@" gets "@<domain>" appended. The default format reproduces the historical test-<DDMM>-<HHmm>-<3 chars>@domain.
+export const DEFAULT_FORMAT_ID = 'default';
+export const DEFAULT_EMAIL_FORMAT = { id: DEFAULT_FORMAT_ID, name: 'Default', template: `${EMAIL_PREFIX}-{ddmm}-{hhmm}-{rand3}@{domain}` };
+export const FORMATS_LIMIT = 12;
+
+export const renderEmail = (template, domain, date = new Date()) => {
+    const out = String(template || '')
+        .replace(/\{ddmm\}/gi, ddmm(date))
+        .replace(/\{hhmm\}/gi, hhmm(date))
+        .replace(/\{rand:(\d{1,2})\}/gi, (_, n) => randomChars(Math.max(1, Math.min(12, Number(n)))))
+        .replace(/\{rand3\}/gi, () => randomChars(3))
+        .replace(/\{domain\}/gi, normalizeHost(domain));
+    return out.includes('@') ? out : `${out}@${normalizeHost(domain)}`;
+};
+
+// An error message, or '' when the template yields a plausible address.
+export const validateTemplate = (template, domain = 'example.com') => {
+    const value = String(template || '').trim();
+    if (!value) return 'Enter a format.';
+    if (value.length > 120) return 'Format too long (120 characters max).';
+    if (/\{(?!ddmm\}|hhmm\}|rand3\}|rand:\d{1,2}\}|domain\})/i.test(value)) return 'Unknown token. Use {ddmm}, {hhmm}, {rand3}, {rand:N} or {domain}.';
+    if (!/\{(rand3|rand:\d{1,2}|hhmm)\}/i.test(value)) return 'Add {rand3}, {rand:N} or {hhmm} so each address is unique.';
+    const mail = renderEmail(value, domain);
+    return /^[a-z0-9._%+-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(mail) && mail.split('@').length === 2 ? '' : 'This does not produce a valid e-mail address.';
+};
+
+// Stored formats, sanitised; the default one always exists.
+export const cleanFormats = (list) => {
+    const seen = new Set();
+    const out = [];
+    for (const f of Array.isArray(list) ? list : []) {
+        const id = String(f && f.id || '').slice(0, 40);
+        const name = String(f && f.name || '').trim().slice(0, 40);
+        const template = String(f && f.template || '').trim();
+        if (!id || !name || seen.has(id) || validateTemplate(template)) continue;
+        seen.add(id);
+        out.push({ id, name, template });
+    }
+    if (!seen.has(DEFAULT_FORMAT_ID)) out.unshift({ ...DEFAULT_EMAIL_FORMAT });
+    return out.slice(0, FORMATS_LIMIT);
+};
+
+export const buildEmail = (domain, template = DEFAULT_EMAIL_FORMAT.template, date = new Date()) => renderEmail(template, domain, date);
 
 // ---- Saved accounts -----------------------------------------------------------------------------------------------------
 // Test accounts created with the extension (or signed in when it is started) are remembered in chrome.storage.local, with the

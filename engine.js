@@ -11,7 +11,7 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const OVERLAY_ID = 'qs-overlay';
-    const BUILD = '21'; // see background.js
+    const BUILD = '22'; // see background.js
 
     // ---- Page helpers -------------------------------------------------------------------------------------------------
     const shown = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -240,7 +240,7 @@
         .line { position: fixed; top: 0; left: 0; right: 0; height: ${RAIL}px; background: ${INK}; z-index: 2147483647; pointer-events: none; }
         .trace { position: fixed; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2147483647; }
         .trace path { fill: none; stroke: #4c9aff; stroke-width: ${RAIL}px; stroke-linecap: butt; stroke-dasharray: 0 100; transition: stroke-dasharray .35s ease, stroke .3s ease; }
-        .line[data-state=done] ~ .trace path { stroke: #3fb950; }
+        .line[data-state=done] ~ .trace path, .line[data-state=signedin] ~ .trace path { stroke: #3fb950; }
         .line[data-state=unknown] ~ .trace path, .line[data-state=stuck] ~ .trace path { stroke: #d29922; }
         .line[data-state=error] ~ .trace path { stroke: #f85149; }
         .line[data-state=stopped] ~ .trace path { stroke: #7d8590; }
@@ -249,13 +249,13 @@
         .ring .arc { fill: none; stroke: #4c9aff; stroke-width: 2.5; stroke-dasharray: 0 100; transition: stroke-dasharray .35s ease, stroke .3s ease; }
         .ring .core { fill: #4c9aff; }
         .bar-root[data-state=running] .ring .core { animation: pulse 1.4s ease-in-out infinite; }
-        .bar-root[data-state=done] .ring .arc { stroke: #3fb950; } .bar-root[data-state=done] .ring .core { fill: #3fb950; }
+        .bar-root[data-state=done] .ring .arc, .bar-root[data-state=signedin] .ring .arc { stroke: #3fb950; } .bar-root[data-state=done] .ring .core, .bar-root[data-state=signedin] .ring .core { fill: #3fb950; }
         .bar-root[data-state=unknown] .ring .arc, .bar-root[data-state=stuck] .ring .arc { stroke: #d29922; } .bar-root[data-state=unknown] .ring .core, .bar-root[data-state=stuck] .ring .core { fill: #d29922; }
         .bar-root[data-state=error] .ring .arc { stroke: #f85149; } .bar-root[data-state=error] .ring .core { fill: #f85149; }
         .bar-root[data-state=stopped] .ring .arc { stroke: #7d8590; } .bar-root[data-state=stopped] .ring .core { fill: #7d8590; }
         .mbar { display: none; height: 3px; margin: 0 12px; border-radius: 2px; background: #2d3139; overflow: hidden; }
         .mbar i { display: block; width: 0; height: 100%; border-radius: 2px; background: #4c9aff; transition: width .35s ease, background .3s ease; }
-        .bar-root[data-state=done] .mbar i { background: #3fb950; }
+        .bar-root[data-state=done] .mbar i, .bar-root[data-state=signedin] .mbar i { background: #3fb950; }
         .bar-root[data-state=unknown] .mbar i, .bar-root[data-state=stuck] .mbar i { background: #d29922; }
         .bar-root[data-state=error] .mbar i { background: #f85149; }
         .bar-root[data-state=stopped] .mbar i { background: #7d8590; }
@@ -269,7 +269,7 @@
         .bar { display: flex; align-items: center; gap: 9px; padding: ${RAIL}px 12px 0; height: ${32 + RAIL}px; cursor: pointer; user-select: none; }
         .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #4c9aff; }
         [data-state=running] .dot { animation: pulse 1.4s ease-in-out infinite; }
-        [data-state=done] .dot { background: #3fb950; }
+        [data-state=done] .dot, [data-state=signedin] .dot { background: #3fb950; }
         [data-state=unknown] .dot, [data-state=stuck] .dot { background: #d29922; }
         [data-state=error] .dot { background: #f85149; }
         [data-state=stopped] .dot { background: #7d8590; }
@@ -334,6 +334,55 @@
         .seg button.on { background: #2f6feb; border-color: #2f6feb; color: #fff; }
         label.check { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; color: #c9ced6; cursor: pointer; }
         label.check input { width: auto; margin: 0; }
+        .acct.current { margin: 0 0 8px; border-color: rgba(63,185,80,.55); background: rgba(63,185,80,.07); }
+        [data-state=signedin] .tabs .tab.on { background: rgba(63,185,80,.14); border-color: rgba(63,185,80,.45); color: #56d364; }
+        button.out { border-color: #3b414b; color: #e8eaed; font-weight: 600; }
+        .formbox > .ghosts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 10px; }
+        button.wide { width: 100%; min-height: 36px; }
+        .formbox .hint { margin: 6px 0 0; color: #7d8590; font-size: 11.5px; }
+        .lab { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; color: #c9ced6; font-weight: 600; }
+        .lab .gap, .edfoot .gap { flex: 1; }
+        .saved { color: #3fb950; font-weight: 500; font-size: 12px; }
+        .linkbtn { border: 0; padding: 0; background: none; color: #79b4ff; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+        .linkbtn:hover { background: none; text-decoration: underline; }
+        .linkbtn.danger { color: #f85149; }
+        .ico2 { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+        .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+        .pills[hidden] { display: none; }
+        .pill { border-radius: 999px; padding: 3px 12px; color: #c9ced6; font-weight: 600; }
+        .pill.on { background: rgba(76,154,255,.16); border-color: #4c9aff; color: #fff; }
+        .addr { font: 12px ui-monospace, Menlo, monospace; color: #e8eaed; background: #14171c; border: 1px solid #2d3139; border-radius: 6px; padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .addr i { font-style: normal; color: #8b929c; }
+        .pwline { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 1px solid #2d3139; border-radius: 6px; background: #14171c; }
+        .pwline .dots { letter-spacing: 2px; color: #c9ced6; }
+        .pwline .linkbtn { margin-left: auto; }
+        .inline { display: flex; gap: 6px; }
+        .inline input { flex: 1; }
+        .tag2 { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 9px; background: rgba(76,154,255,.16); color: #79b4ff; }
+        .frow { border: 1px solid #2d3139; border-radius: 10px; background: #20242b; margin: 0 0 6px; }
+        .frow.open { border-color: #4c9aff; }
+        .frow .top { display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer; }
+        .frow .t { flex: 1; min-width: 0; }
+        .frow .t b { display: block; font-weight: 600; }
+        .frow .mono { display: block; font: 11.5px ui-monospace, Menlo, monospace; color: #8b929c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ghost { flex: none; font-size: 11.5px; color: #9aa1ab; border: 1px dashed #3b414b; border-radius: 9px; padding: 1px 8px; background: none; }
+        button.ghost { visibility: hidden; }
+        .frow:hover button.ghost, button.ghost:focus-visible { visibility: visible; }
+        button.ghost:hover { color: #e8eaed; border-color: #79b4ff; background: none; }
+        .ed { border-top: 1px solid #2d3139; padding: 9px 10px 10px; display: grid; gap: 6px; }
+        .monoin { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+        .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+        .chips button { font: 11px ui-monospace, Menlo, monospace; padding: 2px 7px; border-radius: 999px; color: #c9ced6; }
+        .arrow { font: 12px ui-monospace, Menlo, monospace; color: #e8eaed; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .arrow i { font-style: normal; color: #8b929c; }
+        .arrow.bad { color: #f85149; font-family: inherit; white-space: normal; }
+        .edfoot { display: flex; align-items: center; }
+        .switch { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 12px; padding: 10px 0 0; border: 0; border-top: 1px solid #2d3139; border-radius: 0; background: none; color: #c9ced6; text-align: left; }
+        .switch:hover { background: none; color: #e8eaed; }
+        .tog { width: 30px; height: 18px; border-radius: 9px; background: #3b414b; position: relative; flex: none; transition: background .15s; }
+        .tog::after { content: ""; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #e8eaed; transition: left .15s; }
+        .switch[aria-pressed="true"] .tog { background: #2f6feb; }
+        .switch[aria-pressed="true"] .tog::after { left: 14px; }
         .actions .left { margin-right: auto; }
         .actions button[aria-pressed="true"] { background: #2563eb; border-color: #2563eb; color: #fff; }
         .accts { display: grid; gap: 8px; max-height: 300px; overflow-y: auto; margin: 0 0 2px; padding-right: 2px; }
@@ -371,6 +420,8 @@
             .acct .open { min-height: 38px; }
             .acct .ghosts button { min-height: 34px; }
             label.check { min-height: 32px; }
+            button.ghost { visibility: visible; }
+            .pill { min-height: 34px; }
             input[type=checkbox] { width: 20px; height: 20px; }
         }
         /* Phone: the compact pill stays small so the site's own header remains usable; opened, the panel takes the full width and scrolls. */
@@ -415,7 +466,17 @@
         let hovered = false;
         let hold = false;
         let holdTimer = 0;
-        const sync = () => nodes && nodes.root.classList.toggle('open', pinned || hovered || hold);
+        // Typing in one of its fields keeps it open even if the mouse wanders off.
+        const typing = () => Boolean(nodes && nodes.shadow && nodes.shadow.activeElement && nodes.shadow.activeElement.tagName === 'INPUT');
+        const sync = () => nodes && nodes.root.classList.toggle('open', pinned || hovered || hold || typing());
+        // A form or a list opens the bubble, which then folds like the running bar: when the mouse leaves it, or on a tap of the
+        // header. Only the first-use setup stays pinned (nothing can run until it is filled).
+        const openUntilLeave = (pin) => {
+            clearTimeout(holdTimer);
+            pinned = Boolean(pin);
+            hold = !pin;
+            sync();
+        };
         const holdOpen = (ms) => {
             clearTimeout(holdTimer);
             hold = true;
@@ -426,6 +487,16 @@
             if (cls) n.className = cls;
             if (txt !== undefined) n.textContent = txt;
             return n;
+        };
+        const icon = (d) => {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 16 16');
+            svg.setAttribute('class', 'ico2');
+            svg.setAttribute('aria-hidden', 'true');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', d);
+            svg.append(path);
+            return svg;
         };
         // Progress, as a percentage of the whole route around the bubble (desktop) or of the bar (phone).
         let pct = 0;
@@ -530,6 +601,9 @@
                     pinned = false;
                     hold = false;
                     clearTimeout(holdTimer);
+                } else if (hold) {
+                    hold = false; // opened by a form: a click on the header folds it (it stays open while hovered)
+                    pinned = false;
                 } else pinned = !pinned;
                 sync();
             });
@@ -546,7 +620,8 @@
                 });
             }
             document.documentElement.append(host);
-            nodes = { host, root, line, label, count, trace, tracePath, arc, mbarFill, list, ident, msg, detail, choices, actions, inner, formBox, tabButtons };
+            host.addEventListener('focusout', () => setTimeout(sync, 0));
+            nodes = { shadow, host, root, line, label, count, trace, tracePath, arc, mbarFill, list, ident, msg, detail, choices, actions, inner, formBox, tabButtons };
             // The route follows the bubble frame by frame while it folds, unfolds or the window is resized.
             new ResizeObserver(redraw).observe(root);
             addEventListener('resize', redraw);
@@ -559,6 +634,7 @@
             c.tab = name;
             for (const [key, button] of Object.entries(nodes.tabButtons)) button.classList.toggle('on', key === name);
             nodes.tabButtons.accounts.lastChild.textContent = c.accountCount ? `Accounts (${c.accountCount})` : 'Accounts';
+            nodes.tabButtons.run.lastChild.textContent = c.signedIn ? 'Signed in' : 'Sign-up';
         };
         const render = (c, view) => {
             if (!nodes || !nodes.host.isConnected) build();
@@ -645,9 +721,7 @@
                 setPct(0);
             }
             setTab(c, spec.tab || 'run');
-            pinned = true;
-            clearTimeout(holdTimer);
-            sync();
+            openUntilLeave(spec.state === 'setup');
             const getters = {};
             const err = el('p', 'err');
             err.hidden = true;
@@ -663,7 +737,7 @@
                     submit.disabled = false;
                 }
             };
-            formBox.replaceChildren(el('p', 'intro', spec.intro));
+            formBox.replaceChildren(...(spec.intro ? [el('p', 'intro', spec.intro)] : []));
             let firstInput = null;
             for (const f of spec.fields) {
                 if (f.kind === 'segmented') {
@@ -683,6 +757,306 @@
                     const row = el('div', 'field');
                     row.append(el('span', '', f.label), group);
                     formBox.append(row);
+                    continue;
+                }
+                // A label row: the label, a flexible gap, then optional extras (a link, a "Saved" mark).
+                const labelRow = (text, ...extras) => {
+                    const row = el('div', 'lab');
+                    row.append(el('span', '', text), el('span', 'gap'), ...extras);
+                    return row;
+                };
+                // "✓ Saved" for a moment next to a label, or the error under the form.
+                const savedMark = () => {
+                    const mark = el('span', 'saved', '✓ Saved');
+                    mark.hidden = true;
+                    let timer = 0;
+                    mark.show = (problem) => {
+                        err.textContent = problem || '';
+                        err.hidden = !problem;
+                        if (problem) return;
+                        mark.hidden = false;
+                        clearTimeout(timer);
+                        timer = setTimeout(() => (mark.hidden = true), 1600);
+                    };
+                    return mark;
+                };
+                if (f.kind === 'emailPick') {
+                    // New account: pills for the formats (one click), and the address shape under them.
+                    let current = f.value;
+                    const box = el('div', 'field');
+                    const manage = el('button', 'linkbtn', 'Formats');
+                    manage.type = 'button';
+                    manage.prepend(icon('M2.5 5h11M2.5 11h11M6 3.3v3.4M10.5 9.3v3.4'));
+                    manage.addEventListener('click', f.onManage);
+                    const pills = el('div', 'pills');
+                    const addr = el('div', 'addr');
+                    const view = () => {
+                        const cur = f.formats.find((x) => x.id === current) || f.formats[0];
+                        const [local, domain] = String(cur.example || '').split('@');
+                        addr.replaceChildren(document.createTextNode(local || ''), el('i', '', domain ? `@${domain}` : ''));
+                        addr.title = cur.template;
+                        pills.replaceChildren(
+                            ...f.formats.map((x) => {
+                                const p = el('button', x.id === cur.id ? 'pill on' : 'pill', x.name);
+                                p.type = 'button';
+                                p.setAttribute('aria-pressed', String(x.id === cur.id));
+                                p.addEventListener('click', () => {
+                                    current = x.id;
+                                    view();
+                                });
+                                return p;
+                            }),
+                        );
+                        pills.hidden = f.formats.length < 2;
+                    };
+                    view();
+                    box.append(labelRow('E-mail', manage), pills, addr);
+                    getters[f.key] = () => current;
+                    formBox.append(box);
+                    continue;
+                }
+                if (f.kind === 'autosave') {
+                    // Saved when the field is left or on Enter; no Save button.
+                    const input = el('input');
+                    input.value = f.value || '';
+                    input.placeholder = f.placeholder || '';
+                    input.autocomplete = 'off';
+                    input.spellcheck = false;
+                    const mark = savedMark();
+                    let last = input.value;
+                    const save = async () => {
+                        if (input.value.trim() === last.trim()) return;
+                        const problem = await f.onSave(input.value);
+                        if (!problem) last = input.value;
+                        mark.show(problem);
+                    };
+                    input.addEventListener('keydown', (e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') input.blur();
+                    });
+                    input.addEventListener('change', save);
+                    const box = el('div', 'field');
+                    box.append(labelRow(f.label, mark), input);
+                    formBox.append(box);
+                    continue;
+                }
+                if (f.kind === 'password') {
+                    // Saved: one line with "Change". Typing: the field and its own inline Save (the only explicit save).
+                    const box = el('div', 'field');
+                    const mark = savedMark();
+                    const head = labelRow(f.label, mark);
+                    let saved = f.saved;
+                    const view = () => {
+                        if (saved) {
+                            const lineEl = el('div', 'pwline');
+                            const change = el('button', 'linkbtn', 'Change');
+                            change.type = 'button';
+                            change.addEventListener('click', () => {
+                                saved = false;
+                                view();
+                            });
+                            lineEl.append(el('span', 'dots', '••••••••'), change);
+                            box.replaceChildren(head, lineEl);
+                            return;
+                        }
+                        const wrap = el('div', 'inline');
+                        const input = el('input');
+                        input.type = 'text';
+                        input.classList.add('secret');
+                        input.autocomplete = 'off';
+                        input.spellcheck = false;
+                        input.placeholder = f.saved ? 'New password' : 'Not set';
+                        const go = el('button', 'primary', 'Save');
+                        go.type = 'button';
+                        go.disabled = true;
+                        const save = async () => {
+                            if (!input.value) return;
+                            go.disabled = true;
+                            const problem = await f.onSave(input.value);
+                            mark.show(problem);
+                            if (problem) {
+                                go.disabled = false;
+                                return;
+                            }
+                            saved = true;
+                            f.saved = true;
+                            view();
+                        };
+                        input.addEventListener('input', () => (go.disabled = !input.value));
+                        input.addEventListener('keydown', (e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') save();
+                            if (e.key === 'Escape' && f.saved) {
+                                saved = true;
+                                view();
+                            }
+                        });
+                        go.addEventListener('click', save);
+                        wrap.append(input, go);
+                        box.replaceChildren(head, wrap);
+                        setTimeout(() => input.focus(), 30);
+                    };
+                    view();
+                    formBox.append(box);
+                    continue;
+                }
+                if (f.kind === 'switch') {
+                    const row = el('button', 'switch');
+                    row.type = 'button';
+                    row.setAttribute('role', 'switch');
+                    if (f.data) row.dataset[f.data] = '';
+                    row.setAttribute('aria-pressed', String(Boolean(f.value())));
+                    row.setAttribute('aria-checked', String(Boolean(f.value())));
+                    row.append(el('span', 'tog'), el('span', '', f.label));
+                    row.addEventListener('click', async () => {
+                        row.disabled = true;
+                        const problem = await f.onToggle();
+                        err.textContent = problem || '';
+                        err.hidden = !problem;
+                        row.setAttribute('aria-pressed', String(Boolean(f.value())));
+                        row.setAttribute('aria-checked', String(Boolean(f.value())));
+                        row.disabled = false;
+                    });
+                    formBox.append(row);
+                    continue;
+                }
+                if (f.kind === 'formats') {
+                    // Rows show a real address. A click opens the row in place; valid changes are saved as you type.
+                    let list = f.formats.map((x) => ({ id: x.id, name: x.name, template: x.template, example: x.example }));
+                    let defaultId = f.defaultId;
+                    let openId = null;
+                    let draft = null; // a new format, kept out of the list until it has been edited once
+                    const box = el('div', 'field');
+                    const mark = savedMark();
+                    const persist = async () => mark.show(await f.onChange(list.map(({ id, name, template }) => ({ id, name, template })), defaultId));
+                    const add = el('button', 'linkbtn', '+ New');
+                    add.type = 'button';
+                    add.addEventListener('click', () => {
+                        if (list.length >= 12) return;
+                        const base = list.find((x) => x.id === 'default') || list[0];
+                        draft = { id: `f${Date.now().toString(36)}`, name: `Format ${list.length + 1}`, template: base.template, example: base.example };
+                        openId = draft.id;
+                        render();
+                    });
+                    const render = () => {
+                        const rows = [...list, ...(draft ? [draft] : [])].map((x) => {
+                            const isOpen = x.id === openId;
+                            const row = el('div', isOpen ? 'frow open' : 'frow');
+                            const top = el('div', 'top');
+                            const t = el('span', 't');
+                            t.append(el('b', '', x.name));
+                            if (!isOpen) t.append(el('span', 'mono', x.example || x.template));
+                            top.append(t);
+                            if (x === draft) top.append(el('span', 'ghost', 'New'));
+                            else if (x.id === defaultId) top.append(el('span', 'tag2', 'Default'));
+                            else {
+                                const make = el('button', 'ghost', 'Make default');
+                                make.type = 'button';
+                                make.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    defaultId = x.id;
+                                    render();
+                                    persist();
+                                });
+                                top.append(make);
+                            }
+                            top.addEventListener('click', () => {
+                                if (isOpen && x === draft) draft = null;
+                                openId = isOpen ? null : x.id;
+                                render();
+                            });
+                            row.append(top);
+                            if (isOpen) row.append(editor(x));
+                            return row;
+                        });
+                        box.replaceChildren(labelRow('E-mail formats', mark, add), ...rows);
+                        add.hidden = list.length >= 12 || Boolean(draft);
+                    };
+                    const editor = (x) => {
+                        const ed = el('div', 'ed');
+                        const name = el('input');
+                        name.value = x.name;
+                        name.placeholder = 'Name';
+                        const tpl = el('input');
+                        tpl.value = x.template;
+                        tpl.classList.add('monoin');
+                        for (const i of [name, tpl]) {
+                            i.autocomplete = 'off';
+                            i.spellcheck = false;
+                            i.addEventListener('keydown', (e) => {
+                                e.stopPropagation();
+                                if (e.key === 'Enter' || e.key === 'Escape') close();
+                            });
+                        }
+                        const chips = el('div', 'chips');
+                        const result = el('div', 'arrow');
+                        let timer = 0;
+                        let ticket = 0;
+                        const check = async () => {
+                            const mine = ++ticket;
+                            const r = await f.onPreview(tpl.value);
+                            if (mine !== ticket) return;
+                            const problem = (r && r.error) || (!name.value.trim() ? 'Give the format a name.' : '');
+                            result.className = problem ? 'arrow bad' : 'arrow';
+                            result.replaceChildren(el('i', '', problem ? '' : '→ '), document.createTextNode(problem || (r && r.example) || ''));
+                            if (problem) return;
+                            x.name = name.value.trim();
+                            x.template = tpl.value.trim();
+                            x.example = r.example;
+                            if (x === draft) {
+                                list.push(draft);
+                                draft = null;
+                            }
+                            persist();
+                        };
+                        const changed = () => {
+                            clearTimeout(timer);
+                            timer = setTimeout(check, 450);
+                        };
+                        name.addEventListener('input', changed);
+                        tpl.addEventListener('input', changed);
+                        for (const token of ['{ddmm}', '{hhmm}', '{rand3}', '{rand:5}', '{domain}']) {
+                            const chip = el('button', '', token);
+                            chip.type = 'button';
+                            chip.addEventListener('click', () => {
+                                const at = tpl.selectionStart ?? tpl.value.length;
+                                tpl.value = tpl.value.slice(0, at) + token + tpl.value.slice(tpl.selectionEnd ?? at);
+                                tpl.focus();
+                                tpl.setSelectionRange(at + token.length, at + token.length);
+                                changed();
+                            });
+                            chips.append(chip);
+                        }
+                        const close = () => {
+                            clearTimeout(timer);
+                            if (x === draft) draft = null;
+                            openId = null;
+                            render();
+                        };
+                        const foot = el('div', 'edfoot');
+                        if (x.id !== 'default' && x !== draft) {
+                            const del = el('button', 'linkbtn danger', 'Delete');
+                            del.type = 'button';
+                            del.addEventListener('click', () => {
+                                list = list.filter((y) => y !== x);
+                                if (defaultId === x.id) defaultId = 'default';
+                                openId = null;
+                                render();
+                                persist();
+                            });
+                            foot.append(del);
+                        }
+                        const done = el('button', '', 'Close');
+                        done.type = 'button';
+                        done.addEventListener('click', close);
+                        foot.append(el('span', 'gap'), done);
+                        result.replaceChildren(el('i', '', '→ '), document.createTextNode(x.example || ''));
+                        ed.append(name, tpl, chips, result, foot);
+                        setTimeout(() => (x === draft ? name.select() : tpl.focus()), 30);
+                        return ed;
+                    };
+                    render();
+                    formBox.append(box);
                     continue;
                 }
                 if (f.kind === 'checkbox') {
@@ -706,6 +1080,13 @@
                     e.stopPropagation();
                     if (e.key === 'Enter') send();
                 });
+                if (f.onChange) {
+                    input.addEventListener('change', async () => {
+                        const problem = await f.onChange(input.value);
+                        err.textContent = problem || '';
+                        err.hidden = !problem;
+                    });
+                }
                 getters[f.key] = () => input.value;
                 firstInput = firstInput || input;
                 const row = el('label', 'field');
@@ -714,27 +1095,15 @@
                 formBox.append(row);
             }
             const actions = el('div', 'actions');
-            if (spec.onToggleMediaBlur) {
-                const extra = el('button', 'left', 'Media blur');
-                extra.type = 'button';
-                extra.dataset.mediaBlur = '';
-                extra.setAttribute('aria-pressed', String(Boolean(globalThis.__qsMediaBlur)));
-                extra.addEventListener('click', async () => {
-                    extra.disabled = true;
-                    const problem = await spec.onToggleMediaBlur();
-                    err.textContent = problem || '';
-                    err.hidden = !problem;
-                    extra.disabled = false;
-                });
-                actions.append(extra);
-            }
             if (spec.onCancel) {
                 const cancel = el('button', '', 'Cancel');
                 cancel.addEventListener('click', spec.onCancel);
                 actions.append(cancel);
             }
-            submit.addEventListener('click', send);
-            actions.append(submit);
+            if (spec.submit) {
+                submit.addEventListener('click', send);
+                actions.append(submit);
+            }
             formBox.append(err, actions);
             if (firstInput) setTimeout(() => firstInput.focus(), 50);
         };
@@ -759,14 +1128,45 @@
             const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
             return d.toDateString() === new Date().toDateString() ? `today ${hm}` : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hm}`;
         };
+        // The logo of the site and who the account is: shared by the Accounts list and the current-account screen.
+        const letter = (a) => (a.title || a.host || '?').slice(0, 1).toUpperCase();
+        const accountParts = (a) => {
+            // The logo sits on the colour it was designed for: the background behind it on the member area.
+            const logo = el('div', 'logo');
+            logo.style.background = a.bg || '#fff';
+            if (a.logo) {
+                const img = el('img');
+                img.src = a.logo;
+                img.alt = '';
+                img.addEventListener('error', () => logo.replaceChildren(document.createTextNode(letter(a))));
+                logo.append(img);
+            } else logo.textContent = letter(a);
+            const who = el('div', 'who');
+            const name = el('div', 'name');
+            if (a.avatar) {
+                const face = el('img', 'avatar');
+                face.src = a.avatar;
+                face.alt = '';
+                name.append(face);
+            }
+            name.append(el('b', '', a.pseudo || a.title), el('span', `tag ${a.env}`, a.env));
+            who.append(name);
+            if (a.email) who.append(el('div', 'mail', a.email));
+            const profile = [a.gender === 'woman' ? 'Woman' : a.gender === 'man' ? 'Man' : '', a.age ? `${a.age}` : '', a.city].filter(Boolean).join(' · ');
+            logo.title = a.title;
+            const meta = el('div', 'meta', [a.source === 'captured' ? 'signed in' : 'created', when(a.createdAt)].join(' · '));
+            if (!a.linkable) meta.append(document.createTextNode(' · '), el('span', 'warn', 'no login link'));
+            else if (a.daysLeft !== null) meta.append(document.createTextNode(' · '), el('span', a.daysLeft < 3 ? 'warn' : '', a.daysLeft < 0 ? 'link expired' : `link ${a.daysLeft} d left`));
+            if (profile) who.append(el('div', 'meta', profile));
+            who.append(meta);
+            return { logo, who };
+        };
         const accounts = (c, spec) => {
             if (!nodes || !nodes.host.isConnected) build();
             const { inner, formBox } = nodes;
             inner.dataset.mode = 'form';
             setTab(c, 'accounts');
-            pinned = true;
-            clearTimeout(holdTimer);
-            sync();
+            openUntilLeave(false);
             const note = el('p', 'err');
             note.hidden = true;
             const flash = (button, text, ms = 1200) => {
@@ -786,38 +1186,10 @@
                     note.hidden = false;
                 } else if (done) flash(button, done);
             };
-            const letter = (a) => (a.title || a.host || '?').slice(0, 1).toUpperCase();
             const box = el('div', 'accts');
             for (const a of spec.list) {
                 const row = el('div', 'acct');
-                // The logo sits on the colour it was designed for: the background behind it on the member area.
-                const logo = el('div', 'logo');
-                logo.style.background = a.bg || '#fff';
-                if (a.logo) {
-                    const img = el('img');
-                    img.src = a.logo;
-                    img.alt = '';
-                    img.addEventListener('error', () => logo.replaceChildren(document.createTextNode(letter(a))));
-                    logo.append(img);
-                } else logo.textContent = letter(a);
-                const who = el('div', 'who');
-                const name = el('div', 'name');
-                if (a.avatar) {
-                    const face = el('img', 'avatar');
-                    face.src = a.avatar;
-                    face.alt = '';
-                    name.append(face);
-                }
-                name.append(el('b', '', a.pseudo || a.title), el('span', `tag ${a.env}`, a.env));
-                who.append(name);
-                if (a.email) who.append(el('div', 'mail', a.email));
-                const profile = [a.gender === 'woman' ? 'Woman' : a.gender === 'man' ? 'Man' : '', a.age ? `${a.age}` : '', a.city].filter(Boolean).join(' · ');
-                logo.title = a.title;
-                const meta = el('div', 'meta', [a.source === 'captured' ? 'signed in' : 'created', when(a.createdAt)].join(' · '));
-                if (!a.linkable) meta.append(document.createTextNode(' · '), el('span', 'warn', 'no login link'));
-                else if (a.daysLeft !== null) meta.append(document.createTextNode(' · '), el('span', a.daysLeft < 3 ? 'warn' : '', a.daysLeft < 0 ? 'link expired' : `link ${a.daysLeft} d left`));
-                if (profile) who.append(el('div', 'meta', profile));
-                who.append(meta);
+                const { logo, who } = accountParts(a);
                 const open = el('button', 'primary open', 'Open');
                 open.disabled = !a.linkable;
                 open.title = 'Sign this account in, in a new tab (replaces the session of that site in this browser)';
@@ -840,6 +1212,53 @@
                 note
             );
         };
+        // Started on a page that is already signed in: who is signed in, and a way out (log out) instead of the sign-up form.
+        const current = (c, spec) => {
+            if (!nodes || !nodes.host.isConnected) build();
+            const { root, line, label, count, inner, formBox } = nodes;
+            inner.dataset.mode = 'form';
+            root.dataset.state = 'signedin';
+            line.dataset.state = 'signedin';
+            label.replaceChildren(document.createTextNode('Signed in'));
+            count.textContent = '';
+            setPct(100); // green, full: like a finished sign-up
+            setTab(c, 'run');
+            openUntilLeave(false);
+            const a = spec.account;
+            const card = el('div', 'acct current');
+            const { logo, who } = accountParts(a);
+            card.append(logo, who);
+            const note = el('p', 'err');
+            note.hidden = true;
+            const copyBtn = (text, value) => {
+                const b = el('button', '', text);
+                b.type = 'button';
+                b.disabled = !value;
+                b.addEventListener('click', async () => {
+                    const ok = await copy(typeof value === 'function' ? await value() : value);
+                    b.textContent = ok ? 'Copied' : 'Copy refused';
+                    setTimeout(() => (b.textContent = text), 1200);
+                });
+                return b;
+            };
+            const ghosts = el('div', 'ghosts');
+            ghosts.append(copyBtn('Copy e-mail', a.email), copyBtn('Copy login link', a.linkable ? spec.onLink : ''));
+            const out = el('button', 'out wide', 'Log out');
+            out.type = 'button';
+            out.addEventListener('click', async () => {
+                out.disabled = true;
+                out.textContent = 'Logging out…';
+                note.hidden = true;
+                const problem = await spec.onLogout();
+                if (problem) {
+                    note.textContent = problem;
+                    note.hidden = false;
+                    out.disabled = false;
+                    out.textContent = 'Log out';
+                }
+            });
+            formBox.replaceChildren(card, ghosts, note, out, el('p', 'hint', 'Logs out on the site (My account, then Log out). The sign-up form opens on the page it lands on.'));
+        };
         // Brought back into view by a click on the extension icon while a run is going.
         const reveal = () => {
             if (nodes && nodes.host.isConnected) holdOpen(5000);
@@ -848,7 +1267,7 @@
         document.addEventListener('quick-signup:media-blur-changed', () => {
             nodes?.formBox.querySelector('[data-media-blur]')?.setAttribute('aria-pressed', String(Boolean(globalThis.__qsMediaBlur)));
         });
-        return { render, form, accounts, copy, reveal, setOnTab: (fn) => { onTab = fn; } };
+        return { render, form, accounts, current, copy, reveal, setOnTab: (fn) => { onTab = fn; } };
     })();
 
     class StopRun extends Error {
@@ -1538,17 +1957,21 @@
             const prefs = c.prefs || {};
             const fields = [
                 { key: 'gender', kind: 'segmented', label: 'Account to create', options: [['man', 'Man'], ['woman', 'Woman']], value: prefs.gender === 'woman' ? 'woman' : 'man' },
-                { key: 'usePhoto', kind: 'checkbox', label: 'Add a generated profile photo', value: prefs.usePhoto !== false },
-                { key: 'stopAtPayment', kind: 'checkbox', label: 'Stop on the payment page (otherwise it is skipped)', value: prefs.stopAtPayment === true },
+                { key: 'usePhoto', kind: 'checkbox', label: 'Profile photo', value: prefs.usePhoto !== false },
+                { key: 'stopAtPayment', kind: 'checkbox', label: 'Stop at the payment page', value: prefs.stopAtPayment === true },
             ];
-            if (c.hasPassword) fields.push({ key: 'fillPassword', kind: 'checkbox', label: 'Type the test password on the Password step', value: prefs.fillPassword !== false });
+            if (c.hasPassword) fields.push({ key: 'fillPassword', kind: 'checkbox', label: 'Type the test password', value: prefs.fillPassword !== false });
             else fields.push({ key: 'password', label: 'Test password (saved once, optional)', secret: true, hint: 'Typed on the Password step of every account. Leave empty to type it yourself.' });
-            const show = () =>
+            const show = async () => {
+                const current = (await c.send({ kind: 'settings' })) || {};
+                const formats = current.emailFormats || [];
+                const fieldsNow = [...fields];
+                if (formats.length) fieldsNow.splice(1, 0, { key: 'formatId', kind: 'emailPick', formats, value: current.defaultFormatId, onManage: () => openSettings(c) });
                 island.form(c, {
                     state: 'choose',
                     title: 'New account',
-                    intro: c.signedInNote ? `Host: ${location.hostname}\n${c.signedInNote}` : `Host: ${location.hostname}`,
-                    fields,
+                    intro: c.signedInNote ? `${location.hostname}\n${c.signedInNote}` : location.hostname,
+                    fields: fieldsNow,
                     submit: 'Start',
                     onCancel: () => {
                         c.cancelled = true;
@@ -1558,7 +1981,7 @@
                         resolve();
                     },
                     onSubmit: async (values) => {
-                        const result = await c.send({ kind: 'choose', gender: values.gender, usePhoto: values.usePhoto, fillPassword: values.fillPassword, stopAtPayment: values.stopAtPayment, password: values.password });
+                        const result = await c.send({ kind: 'choose', gender: values.gender, usePhoto: values.usePhoto, fillPassword: values.fillPassword, stopAtPayment: values.stopAtPayment, password: values.password, formatId: values.formatId });
                         if (!result || !result.ok) return 'Could not start.';
                         c.vars = result.vars;
                         c.hasPassword = result.hasPassword;
@@ -1569,33 +1992,90 @@
                         return null;
                     },
                 });
+            };
             c.reshow = show;
             show();
         });
+    // Log out the way a member does: My account (#/private/account on the member area), then the Log out button at the bottom. The site
+    // clears its session and goes back to its landing page, where the extension (still waiting for the choice) opens the sign-up form.
+    const LOGOUT_RE = /^(d[ée]connexion|se d[ée]connecter|log ?out|sign ?out|ausloggen|abmelden|desconectarse|cerrar sesi[óo]n|disconnessione|esci|afmelden|uitloggen|wyloguj si[ęe]|sair|odjava)$/i;
+    const logoutControl = () => [...document.querySelectorAll('button,a,[role=button]')].filter((e) => shown(e) && LOGOUT_RE.test(text(e).trim())).pop() || null;
+    const logOut = async () => {
+        let target = logoutControl();
+        if (!target) {
+            if (!/^#\/private\/account\b/.test(location.hash)) location.hash = '#/private/account';
+            for (let i = 0; i < 40 && !target; i++) {
+                await sleep(250);
+                target = logoutControl();
+            }
+        }
+        if (!target) return 'No Log out button found on My account.';
+        target.scrollIntoView({ block: 'center' });
+        await sleep(400);
+        target.click();
+        for (let i = 0; i < 40; i++) {
+            await sleep(250);
+            if (!readSession('captured')) return null;
+        }
+        return 'Log out was clicked, but the session is still there.';
+    };
+    const showCurrent = (c, account) =>
+        new Promise((resolve) => {
+            c.signedIn = true;
+            const show = () =>
+                island.current(c, {
+                    account,
+                    onLink: async () => {
+                        const r = await c.send({ kind: 'accountLink', id: account.id });
+                        return r && r.ok ? r.link : '';
+                    },
+                    onLogout: async () => {
+                        const problem = await logOut();
+                        if (problem) return problem;
+                        // Same page after log out (no redirect): the sign-up form, here.
+                        c.signedIn = false;
+                        c.reshow = null;
+                        resolve();
+                        return null;
+                    },
+                });
+            c.reshow = show;
+            show();
+        });
+    // Settings: no Save / Cancel. The domain is saved when left, the formats as they are edited, the password by its inline Save.
     const openSettings = async (c) => {
         const current = (await c.send({ kind: 'settings' })) || {};
+        const problemOf = (r, fallback) => (r && r.ok ? null : (r && r.error) || fallback);
         island.form(c, {
             state: 'settings',
             tab: 'settings',
             title: 'Settings',
-            intro: 'Set once for every site. Change them only when needed.',
             fields: [
-                { key: 'emailDomain', label: 'E-mail domain', value: current.emailDomain },
-                { key: 'password', label: 'Test password', secret: true, placeholder: current.hasPassword ? 'Saved (leave empty to keep it)' : 'Not set' },
+                { key: 'emailDomain', kind: 'autosave', label: 'E-mail domain', value: current.emailDomain, placeholder: 'mailbox.example.com', onSave: async (value) => problemOf(await c.send({ kind: 'saveSettings', emailDomain: value }), 'Could not save the domain.') },
+                {
+                    key: 'password',
+                    kind: 'password',
+                    label: 'Test password',
+                    saved: Boolean(current.hasPassword),
+                    onSave: async (value) => {
+                        const r = await c.send({ kind: 'saveSettings', password: value });
+                        if (r && r.ok) c.hasPassword = r.hasPassword;
+                        return problemOf(r, 'Could not save the password.');
+                    },
+                },
+                { key: 'formats', kind: 'formats', formats: current.emailFormats || [], defaultId: current.defaultFormatId, onPreview: (template) => c.send({ kind: 'previewFormat', template }), onChange: async (list, defaultId) => problemOf(await c.send({ kind: 'saveFormats', emailFormats: list, defaultFormatId: defaultId }), 'Could not save the format.') },
+                {
+                    key: 'blur',
+                    kind: 'switch',
+                    data: 'mediaBlur',
+                    label: 'Blur photos and videos on this page',
+                    value: () => globalThis.__qsMediaBlur,
+                    onToggle: async () => {
+                        const result = await c.send({ kind: 'toggleMediaBlur' });
+                        return result ? result.error : 'Could not toggle media blur.';
+                    },
+                },
             ],
-            onToggleMediaBlur: async () => {
-                const result = await c.send({ kind: 'toggleMediaBlur' });
-                return result ? result.error : 'Could not toggle media blur.';
-            },
-            submit: 'Save',
-            onCancel: () => c.showRun(),
-            onSubmit: async (values) => {
-                const result = await c.send({ kind: 'saveSettings', ...values });
-                if (!result || !result.ok) return (result && result.error) || 'Could not save the settings.';
-                c.hasPassword = result.hasPassword;
-                c.showRun();
-                return null;
-            },
         });
     };
 
@@ -1712,8 +2192,9 @@
             if (c.needsChoice && !c.cancelled) {
                 // Started on a page that is already signed in: keep that account in the list before anything else happens.
                 const saved = await remember(c, 'captured');
-                if (saved) c.signedInNote = saved.isNew ? 'Signed in here: this account was saved to your list.' : 'Signed in here: this account is in your list (refreshed).';
-                await askChoice(c);
+                if (saved && saved.account) await showCurrent(c, saved.account);
+                else if (saved) c.signedInNote = saved.isNew ? 'Signed in here: this account was saved to your list.' : 'Signed in here: this account is in your list (refreshed).';
+                if (!c.cancelled) await askChoice(c);
             }
             if (c.cancelled) return;
             // The form is gone as soon as Start is pressed: show the run (nothing spins yet) instead of a greyed Start while the first screen settles.
