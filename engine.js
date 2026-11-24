@@ -91,8 +91,8 @@
     // ---- Step recognition ---------------------------------------------------------------------------------------------
     const LATER_RE = /^(later|plus tard|pi[uù] tardi|m[aá]s tarde|sp[aä]ter|mais tarde|skip|passer|ignorer)$/i;
     const CARD_RE = /cc-|card|cvv|cvc|expir/i;
-    const NAME_USER_RE = /^(login|username|pseudo|nickname)$/i;
-    // The pseudo field is told by its name, or by its id when the site leaves the name empty.
+    const NAME_USER_RE = /^(login|username|pseudo|nickname|displayname)$/i;
+    // Legacy registration forms use displayName for the signup pseudo.
     const isUserField = (e) => NAME_USER_RE.test(e.name) || NAME_USER_RE.test(e.id);
     const isEmailField = (e) => e.type === 'email' || e.name === 'email';
     const isAgeSelect = (e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60);
@@ -114,7 +114,7 @@
         else if ([has(isEmailField), has(isUserField), has(isAgeSelect), has(isGenderField)].filter(Boolean).length >= 2) type = 'onepage';
         else if (has((e) => e.type === 'email' || e.name === 'email')) type = 'email';
         else if (has((e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60))) type = 'age';
-        else if (has((e) => NAME_USER_RE.test(e.name))) type = 'username';
+        else if (has(isUserField)) type = 'username';
         else if (has((e) => e.tagName === 'SELECT' && e.name === 'gender') || has((e) => e.type === 'radio' && e.name === 'gender')) type = 'gender';
         else if (has((e) => e.type === 'text' && (e.classList.contains('location-input') || e.closest('[class*=typehead],[class*=typeahead]'))) || (fs.length && /live in|habite|ville|city|where/i.test(h))) type = 'city';
         // Interests screen: clickable chips next to a hidden "hobbies" input (the chips are not form fields).
@@ -974,7 +974,7 @@
             next.click();
         },
         username: async (c, st) => {
-            const field = need(slot(c, st, 'field', () => st.fs.find((e) => NAME_USER_RE.test(e.name))), 'pseudo input');
+            const field = need(slot(c, st, 'field', () => st.fs.find(isUserField)), 'pseudo input');
             // Keep the same pseudo when retrying (the click may simply not have been taken); draw another only if the page complained.
             if (!c.pseudo || (c.usernameTries > 0 && pageMessages().length)) c.pseudo = genPseudo(c.settings.gender);
             c.usernameTries = (c.usernameTries || 0) + 1;
