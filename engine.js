@@ -11,7 +11,7 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const OVERLAY_ID = 'qs-overlay';
-    const BUILD = '18'; // see background.js
+    const BUILD = '19'; // see background.js
 
     // ---- Page helpers -------------------------------------------------------------------------------------------------
     const shown = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -312,6 +312,7 @@
         label.check { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; color: #c9ced6; cursor: pointer; }
         label.check input { width: auto; margin: 0; }
         .actions .left { margin-right: auto; }
+        .actions button[aria-pressed="true"] { background: #2563eb; border-color: #2563eb; color: #fff; }
         .accts { display: grid; gap: 8px; max-height: 300px; overflow-y: auto; margin: 0 0 2px; padding-right: 2px; }
         .accts::-webkit-scrollbar { width: 6px; }
         .accts::-webkit-scrollbar-thumb { background: #3b414b; border-radius: 3px; }
@@ -682,10 +683,18 @@
                 formBox.append(row);
             }
             const actions = el('div', 'actions');
-            if (spec.secondary) {
-                const extra = el('button', 'left', spec.secondary.label);
+            if (spec.onToggleMediaBlur) {
+                const extra = el('button', 'left', 'Media blur');
                 extra.type = 'button';
-                extra.addEventListener('click', spec.secondary.onClick);
+                extra.dataset.mediaBlur = '';
+                extra.setAttribute('aria-pressed', String(Boolean(globalThis.__qsMediaBlur)));
+                extra.addEventListener('click', async () => {
+                    extra.disabled = true;
+                    const problem = await spec.onToggleMediaBlur();
+                    err.textContent = problem || '';
+                    err.hidden = !problem;
+                    extra.disabled = false;
+                });
                 actions.append(extra);
             }
             if (spec.onCancel) {
@@ -805,6 +814,9 @@
             if (nodes && nodes.host.isConnected) holdOpen(5000);
             sync();
         };
+        document.addEventListener('quick-signup:media-blur-changed', () => {
+            nodes?.formBox.querySelector('[data-media-blur]')?.setAttribute('aria-pressed', String(Boolean(globalThis.__qsMediaBlur)));
+        });
         return { render, form, accounts, copy, reveal, setOnTab: (fn) => { onTab = fn; } };
     })();
 
@@ -1480,6 +1492,10 @@
                 { key: 'emailDomain', label: 'E-mail domain', value: current.emailDomain },
                 { key: 'password', label: 'Test password', secret: true, placeholder: current.hasPassword ? 'Saved (leave empty to keep it)' : 'Not set' },
             ],
+            onToggleMediaBlur: async () => {
+                const result = await c.send({ kind: 'toggleMediaBlur' });
+                return result ? result.error : 'Could not toggle media blur.';
+            },
             submit: 'Save',
             onCancel: () => c.showRun(),
             onSubmit: async (values) => {

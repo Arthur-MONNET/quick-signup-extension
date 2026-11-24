@@ -8,7 +8,7 @@ const session = chrome.storage.session;
 const LOG_LIMIT = 40;
 const MEDIA_BLUR_MENU = 'toggle-media-blur';
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
-const BUILD = '18';
+const BUILD = '19';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
 const ACTIVE = ['setup', 'choose', 'running'];
 
@@ -387,6 +387,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.tab) {
         const tabId = sender.tab.id;
         (async () => {
+            if (message.kind === 'toggleMediaBlur' && sender.frameId === 0) {
+                return toggleMediaBlur(sender.tab, sender.documentId);
+            }
             const run = await getRun(tabId);
             // The settings (domain, password) are global and reachable from any allowed page, run active or not.
             if (['settings', 'saveSettings'].includes(message.kind)) {
@@ -620,14 +623,14 @@ const notice = (tabId, text) =>
         })
         .catch(() => undefined);
 
-const toggleMediaBlur = async (tab) => {
-    if (tab?.id === undefined) return;
+const toggleMediaBlur = async (tab, documentId) => {
+    if (tab?.id === undefined) return { error: 'No active page.' };
     const host = hostOf(tab.url || '');
-    if (!host || !isHostAllowed(host, (await getSettings()).allowedHosts)) return;
+    if (!host || !isHostAllowed(host, (await getSettings()).allowedHosts)) return { error: 'This host is not allowed.' };
 
     try {
         const [{ result }] = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+            target: { tabId: tab.id, ...(documentId ? { documentIds: [documentId] } : {}) },
             args: [host],
             func: (expectedHost) => {
                 if (location.hostname !== expectedHost) return null;
@@ -635,18 +638,19 @@ const toggleMediaBlur = async (tab) => {
                 if (current) {
                     document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => sheet !== current);
                     delete globalThis.__qsMediaBlur;
-                    return false;
+                } else {
+                    const sheet = new CSSStyleSheet();
+                    sheet.replaceSync('img, video, svg image { filter: blur(24px) !important; }');
+                    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+                    globalThis.__qsMediaBlur = sheet;
                 }
-                const sheet = new CSSStyleSheet();
-                sheet.replaceSync('img, video, svg image { filter: blur(24px) !important; }');
-                document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-                globalThis.__qsMediaBlur = sheet;
-                return true;
+                document.dispatchEvent(new Event('quick-signup:media-blur-changed'));
+                return !current;
             },
         });
-        if (result !== null) await notice(tab.id, result ? 'Media blur on for this page.' : 'Media blur off.');
+        return result === null ? { error: 'The page changed. Try again on the current page.' } : { enabled: result };
     } catch (error) {
-        await notice(tab.id, `Quick Signup could not toggle media blur: ${error.message}`);
+        return { error: `Quick Signup could not toggle media blur: ${error.message}` };
     }
 };
 
@@ -660,8 +664,10 @@ chrome.runtime.onInstalled.addListener(() => {
         }
     });
 });
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === MEDIA_BLUR_MENU) void toggleMediaBlur(tab);
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId !== MEDIA_BLUR_MENU || tab?.id === undefined) return;
+    const result = await toggleMediaBlur(tab);
+    await notice(tab.id, result.error || (result.enabled ? 'Media blur on for this page.' : 'Media blur off.'));
 });
 
 // One click on the icon (or the shortcut) starts everything: the bar in the page takes it from there.
