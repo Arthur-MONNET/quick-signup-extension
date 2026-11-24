@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Quick Signup options</title>
+    <link rel="stylesheet" href="ui.css" />
+</head>
+<body class="options">
+    <h1>Quick Signup options</h1>
+    <p class="hint">Everything is stored in this browser profile (chrome.storage.local). Nothing is ever written in the code, in git or in logs.</p>
+
+    <fieldset>
+        <legend>Test account</legend>
+        <label class="field"><span>E-mail domain (accounts are <code>test-&lt;DDMM&gt;-&lt;HHmm&gt;-&lt;random&gt;@domain</code>)</span>
+            <input type="text" id="emailDomain" placeholder="your-test-mailbox-domain.com" autocomplete="off" /></label>
+        <label class="field"><span>Test password (typed by the extension only on the Password step, on your request)</span>
+            <input type="password" id="password" autocomplete="new-password" />
+        </label>
+        <p class="hint" id="passwordState"></p>
+        <button id="clearPassword" type="button">Clear saved password</button>
+    </fieldset>
+
+    <fieldset>
+        <legend>Allowed hosts</legend>
+        <p class="hint">One per line, exact host or <code>*.domain.com</code>. The extension never acts anywhere else. Include every host of the flow (site, member area, payment page). A host that is not in the built-in list asks for a browser permission when you save.</p>
+        <textarea id="allowedHosts" spellcheck="false"></textarea>
+        <button id="resetHosts" type="button">Restore default hosts</button>
+    </fieldset>
+
+    <fieldset>
+        <legend>Remembered journeys</legend>
+        <p class="hint">Steps and selectors learned per site, replayed faster next time.</p>
+        <button id="forgetJourneys" type="button">Forget all remembered journeys</button>
+    </fieldset>
+
+    <fieldset>
+        <legend>Saved accounts</legend>
+        <p class="hint">Accounts created with the extension, or signed in when you started it, with the login link of each (it holds that account's refresh token, so anyone with the link can sign in as it). Stored in this browser profile only, listed in the bar under "Accounts".</p>
+        <p class="hint" id="accountsState"></p>
+        <button id="forgetAccounts" type="button">Forget all saved accounts and their login links</button>
+    </fieldset>
+
+    <button id="save" class="primary" type="button">Save</button><span id="saved"></span>
+    <p id="error" class="problem" hidden></p>
+    <script type="module" src="options.js"></script>
+</body>
+</html>
