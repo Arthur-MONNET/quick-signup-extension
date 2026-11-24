@@ -853,7 +853,7 @@
 
     // Carousel screens: the page preselects an item when it mounts (about a second later). Keep that default and go on.
     const keepDefault = async (c, st) => {
-        await sleep(1500);
+        await sleep(600);
         nextButton(c, st).click();
     };
 
@@ -1187,18 +1187,18 @@
 
     // ---- Main loop ------------------------------------------------------------------------------------------------------
     // Waits for the page to settle on a recognised step (redirects, spinners), up to 12 s, and for it to stay stable.
+    // Waits for a recognised screen that stays the same for a moment. The DOM being built is enough (not the end of the load, which waits
+    // for every image, font and tracker): the screen is usable long before. Up to about 12 s for an unknown screen.
     const settle = async (c) => {
         let st = classify();
-        for (let t = 0; t < 48 && !c.cancelled; t++) {
-            if (document.readyState === 'complete' && st.type !== 'unknown') {
-                await sleep(250);
+        for (let t = 0; t < 100 && !c.cancelled; t++) {
+            await sleep(120);
+            if (document.readyState !== 'loading' && st.type !== 'unknown') {
+                await sleep(130);
                 const again = classify();
                 if (again.sig === st.sig) return st;
                 st = again;
-            } else {
-                await sleep(250);
-                st = classify();
-            }
+            } else st = classify();
         }
         return st;
     };
@@ -1491,7 +1491,7 @@
             if (c.lastView) island.render(c, c.lastView);
         };
         // Back to the sign-up tab: the form being filled, or the last view of the run.
-        c.showRun = () => (c.reshow ? c.reshow() : island.render(c, c.lastView || { state: 'running', step: c.lastStep, stop, onSettings: settingsButton }));
+        c.showRun = () => (c.reshow ? c.reshow() : island.render(c, c.lastView || { state: 'running', step: undefined, stop, onSettings: settingsButton }));
         island.setOnTab((name) => {
             if (name === c.tab) return;
             if (name === 'accounts') openAccounts(c);
@@ -1499,7 +1499,8 @@
             else c.showRun();
         });
         c.accountCount = (((await c.send({ kind: 'accountList' })) || {}).accounts || []).length;
-        if (!c.needsSetup && !c.needsChoice) island.render(c, { state: 'running', step: c.lastStep, stop, onSettings: settingsButton });
+        // No step is being handled yet on a fresh page: the one seen before is finished, so nothing spins until the new screen is recognised.
+        if (!c.needsSetup && !c.needsChoice) island.render(c, { state: 'running', step: undefined, stop, onSettings: settingsButton });
         try {
             if (c.needsSetup) await askSetup(c);
             if (c.needsChoice && !c.cancelled) {
@@ -1531,6 +1532,8 @@
                     c.history.push(...c.pendingCover);
                     c.pendingCover = null;
                 }
+                // The screen moved on: the step just handled is validated, and nothing spins until the next one is recognised.
+                if (changed) island.render(c, { state: 'running', step: undefined, stop, onSettings: settingsButton });
                 // The pseudo step creates the account, then the site redirects to another host, which can take a while (slow on prod).
                 // Never click NEXT again meanwhile: wait for the answer, and only retry when the page shows an error of its own.
                 // If the redirect completes, this page is replaced and the service worker resumes the run on the new one.
