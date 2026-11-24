@@ -97,11 +97,22 @@
     const isEmailField = (e) => e.type === 'email' || e.name === 'email';
     const isAgeSelect = (e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60);
     const isGenderField = (e) => (e.tagName === 'SELECT' && (e.name === 'gender' || e.name === 'genderSelect' || [...e.options].some((o) => /^(male|female)$/i.test(o.value)))) || (e.type === 'radio' && e.name === 'gender');
+    const campaignQuestion = (field) => {
+        const prompt = field?.parentElement?.previousElementSibling;
+        return shown(prompt) ? text(prompt) : '';
+    };
+    const PREFERENCE_RE = /^(Which body type do you prefer|What hair color are you looking for|Quelle morphologie préférez-vous|Quelle couleur de cheveux recherchez-vous)\s*\?$/i;
+    const CAMPAIGN_CITY_RE = /^(Where do you live|Où habitez-vous)\s*\?$/i;
+    const CAMPAIGN_PSEUDO_RE = /^(Choose a username|Choisissez un pseudo)$/i;
+    const CAMPAIGN_AGE_RE = /^(Select your age|What is the ideal age for you|Sélectionnez votre âge|Quel est l'âge idéal pour vous)\s*\??$/i;
+    const isCampaignPseudo = (field) => field.type === 'text' && CAMPAIGN_PSEUDO_RE.test(campaignQuestion(field));
 
     const classify = () => {
         const fs = fields();
         const has = (f) => fs.some(f);
         const h = heading();
+        const campaignField = fs.length === 1 ? fs[0] : null;
+        const question = campaignQuestion(campaignField);
         let type = 'unknown';
         const later = [...document.querySelectorAll('a[href*="/payment/later"]')].find((e) => shown(e));
         if (later) type = 'payment-later';
@@ -114,8 +125,10 @@
         else if ([has(isEmailField), has(isUserField), has(isAgeSelect), has(isGenderField)].filter(Boolean).length >= 2) type = 'onepage';
         else if (has((e) => e.type === 'email' || e.name === 'email')) type = 'email';
         else if (has((e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60))) type = 'age';
-        else if (has(isUserField)) type = 'username';
+        else if (has(isUserField) || (campaignField && isCampaignPseudo(campaignField))) type = 'username';
         else if (has(isGenderField)) type = 'gender';
+        else if (campaignField?.tagName === 'SELECT' && PREFERENCE_RE.test(question)) type = 'preference';
+        else if (campaignField?.type === 'text' && CAMPAIGN_CITY_RE.test(question)) type = 'campaign-city';
         else if (has((e) => e.type === 'text' && (e.classList.contains('location-input') || e.closest('[class*=typehead],[class*=typeahead]'))) || (fs.length && /live in|habite|ville|city|where/i.test(h))) type = 'city';
         // Interests screen: clickable chips next to a hidden "hobbies" input (the chips are not form fields).
         else if (!fs.length && document.querySelector('input[type=hidden][name^=hobbies]')) type = 'hobbies';
@@ -129,7 +142,8 @@
         else if (!fs.length && document.querySelector('input[type=hidden][name=predefinedWelcomeMessage],input[type=hidden][name*=welcome i],textarea[name=msg],textarea[name*=welcome i]')) type = 'welcome';
         else if (!fs.length && resolve('button#signUp')) type = 'cta';
         const names = [...new Set(fs.map((e) => e.name || e.type))].sort().join(',');
-        const fp = `${type}:${names}`.slice(0, 120);
+        const stepQuestion = type === 'preference' || (type === 'age' && CAMPAIGN_AGE_RE.test(question)) ? question : '';
+        const fp = `${type}:${names}${stepQuestion ? `:${stepQuestion}` : ''}`.slice(0, 120);
         return { type, fp, sig: `${fp}|${routeKey()}`, h, fs };
     };
 
@@ -178,8 +192,10 @@
         ['onepage', 'Sign-up form', true],
         ['gender', 'Gender'],
         ['age', 'Age'],
+        ['preference', 'Profile preference', true],
         ['email', 'E-mail'],
         ['username', 'Pseudo'],
+        ['campaign-city', 'City on landing page', true],
         ['criteria', 'Looking for', true],
         ['city', 'City'],
         ['photo', 'Photo'],
@@ -890,12 +906,29 @@
             nextButton(c, st).click();
         },
         age: async (c, st) => {
-            const field = need(slot(c, st, 'field', () => resolve('select[name=birthdate]')), 'age select');
+            const field = need(slot(c, st, 'field', () => st.fs.find(isAgeSelect)), 'age select');
             const age = String(c.settings.age);
             const option = [...field.options].find((o) => o.value === age) || [...field.options].find((o) => new RegExp(`^${age}\\b`).test(o.text));
             if (!option) throw new StopRun('error', `No age option for ${age}`);
             setValue(field, option.value);
             await sleep(400);
+            nextButton(c, st).click();
+        },
+        preference: async (c, st) => {
+            const field = need(st.fs.find((e) => e.tagName === 'SELECT'), 'preference select');
+            // The first entry is the placeholder even after Vue assigns it the selected value.
+            const option = [...field.options].slice(1).find((entry) => entry.value && !entry.disabled);
+            if (!option) throw new StopRun('error', 'No available profile preference option');
+            setValue(field, option.value);
+            verify(field, option.value, 'The profile preference');
+            await sleep(200);
+            nextButton(c, st).click();
+        },
+        'campaign-city': async (c, st) => {
+            const field = st.fs[0];
+            setValue(field, c.settings.city);
+            verify(field, c.settings.city, 'The city');
+            await sleep(200);
             nextButton(c, st).click();
         },
         email: async (c, st) => {
@@ -972,7 +1005,7 @@
             next.click();
         },
         username: async (c, st) => {
-            const field = need(slot(c, st, 'field', () => st.fs.find(isUserField)), 'pseudo input');
+            const field = need(slot(c, st, 'field', () => st.fs.find((e) => isUserField(e) || isCampaignPseudo(e))), 'pseudo input');
             // Keep the same pseudo when retrying (the click may simply not have been taken); draw another only if the page complained.
             if (!c.pseudo || (c.usernameTries > 0 && pageMessages().length)) c.pseudo = genPseudo(c.settings.gender);
             c.usernameTries = (c.usernameTries || 0) + 1;
