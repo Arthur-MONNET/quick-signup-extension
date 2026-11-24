@@ -76,7 +76,7 @@
         if (!sel) return all ? [] : null;
         if (sel.startsWith('text:')) {
             const re = new RegExp(sel.slice(5), 'i');
-            const hits = [...document.querySelectorAll('button,a,[role=button],[role=option],li')].filter((e) => shown(e) && !inBanner(e) && re.test(text(e)));
+            const hits = [...document.querySelectorAll('button,a,[role=button],[role=option],li,div,span')].filter((e) => shown(e) && !inBanner(e) && re.test(text(e)));
             return all ? hits : hits[0] || null;
         }
         let hits;
@@ -888,7 +888,9 @@
                 const own = near && [...near.querySelectorAll('button[type=submit],input[type=submit]')].filter((e) => shown(e) && e.id !== 'signUp');
                 // Last resort: the only visible <button> of the screen (the landing buttons stay in the DOM behind the form).
                 const lone = buttons().filter((e) => e.tagName === 'BUTTON' && e.id !== 'signUp');
-                return resolve('#next_btn') || (own && own.length === 1 ? own[0] : null) || (lone.length === 1 ? lone[0] : null);
+                const sole = resolve('#next_btn') || (own && own.length === 1 ? own[0] : null) || (lone.length === 1 ? lone[0] : null);
+                // Several buttons (a quiz step with RETURN and NEXT): the forward-looking one, never a refusal, a log-in or a third-party button.
+                return sole || [...tapCandidates()].filter((e) => !isRefusalControl(e)).sort((a, b) => forwardScore(b) - forwardScore(a))[0] || null;
             }),
             'advance button'
         );
@@ -1316,7 +1318,7 @@
     const settle = async (c) => {
         let st = classify();
         let sameUnknown = 0;
-        for (let t = 0; t < 100 && !c.cancelled; t++) {
+        for (let t = 0; t < 200 && !c.cancelled; t++) {
             await sleep(120);
             if (document.readyState !== 'loading' && st.type !== 'unknown') {
                 await sleep(130);
@@ -1325,10 +1327,11 @@
                 st = again;
             } else {
                 const again = classify();
-                // An unknown screen that has not changed for about 2.5 s is what it is (a quiz step, an entry page): no need to wait 12 s.
                 sameUnknown = again.type === 'unknown' && again.sig === st.sig && document.readyState !== 'loading' ? sameUnknown + 1 : 0;
                 st = again;
-                if (sameUnknown >= 20) return st;
+                // An unknown screen that has not changed for about 2.5 s AND offers buttons to click is a quiz step or an entry page: handle it
+                // now. A blank or still-loading page (the registration app takes seconds to draw) has none: keep waiting for it, up to ~24 s.
+                if (sameUnknown >= 20 && tapCandidates().length) return st;
             }
         }
         return st;
@@ -1606,11 +1609,22 @@
         return YES_RE.test(label) || /(^|[-_\s])(yes|oui)($|[-_\s])/i.test(attrs);
     };
     const REFUSAL_RE = /^(no|non|nein|nee|não|nao|nope|no,? thanks?|non merci|no thanks|cancel|annuler|close|fermer|skip|passer|later|plus tard|refuse|decline|dismiss|back|retour|return|menu|previous|pr[ée]c[ée]dent|zur[üu]ck)\b/i;
-    const FORWARD_RE = /sign[-_ ]?up|regist|inscri|create|cr[ée]er|join|rejoindre|start|commenc|d[ée]marr|discuss|chat|next|suivant|continu|search|rechercher|find|trouver|discover|d[ée]couvr|view|voir|enter|entrer|go\b|ok\b|accept|agree/i;
+    const FORWARD_RE = /sign[-_ ]?up|regist|inscri|create|cr[ée]er|join|rejoindre|start|commenc|d[ée]marr|discuss|chat|next|suivant|continu|search|rechercher|find|trouver|discover|d[ée]couvr|view|voir|enter|entrer|rejoin|go\b|ok\b|accept|agree/i;
     const isRefusalControl = (e) => REFUSAL_RE.test(text(e).split('\n')[0].trim()) || /(^|[-_\s])(no|non|cancel|close|skip|back|return)($|[-_\s])|btn-?no(confirm)?\b/i.test(`${e.id} ${String(e.className || '')}`);
     const NEXT_RE = /^(next|suivant|weiter|siguiente|avanti|pr[óo]ximo|volgende|continue|continuer|continuar|ok)\b/i;
-    const forwardScore = (e) => (NEXT_RE.test(text(e).split('\n')[0].trim()) ? 200 : 0) + (isYesControl(e) ? 100 : 0) + (FORWARD_RE.test(`${text(e)} ${e.id} ${String(e.className || '')}`) ? 10 : 0) + (e.type === 'submit' ? 3 : 0) + (e.closest('form') ? 1 : 0);
-    const tapCandidates = () => buttons().filter((e) => e.tagName !== 'A' && text(e) && !isLoginControl(e) && !e.closest('footer,header,nav'));
+    const SIGNUP_RE = /sign[-_ ]?up|regist|inscri|create|cr[ée]er|join|rejoin|start|commenc|d[ée]marr|discuss|chat/i;
+    const forwardScore = (e) => (NEXT_RE.test(text(e).split('\n')[0].trim()) ? 200 : 0) + (isYesControl(e) ? 100 : 0) + (FORWARD_RE.test(`${text(e)} ${e.id} ${String(e.className || '')}`) ? 10 : 0) + (SIGNUP_RE.test(`${text(e)} ${e.id} ${String(e.className || '')}`) ? 30 : 0) + (e.type === 'submit' ? 3 : 0) + (e.closest('form') ? 1 : 0);
+    // Real buttons first; when none is usable, anything that behaves like one (a div or span with the pointer cursor and a short label:
+    // many landing pages style their call to action that way). The outermost clickable element only, never a log-in or third-party one.
+    const tapCandidates = () => {
+        const real = buttons().filter((e) => e.tagName !== 'A' && text(e) && !isLoginControl(e) && !e.closest('footer,header,nav'));
+        if (real.length) return real;
+        const pointer = (e) => getComputedStyle(e).cursor === 'pointer';
+        return [...document.querySelectorAll('div,span,li,p,label,article,section,a')]
+            .slice(0, 800)
+            .filter((e) => shown(e) && !inBanner(e) && !e.closest('footer,header,nav') && text(e) && text(e).length <= 60 && pointer(e) && !(e.parentElement && pointer(e.parentElement)) && !isLoginControl(e))
+            .slice(0, 12);
+    };
     const unknownTap = async (c, st, stop, settingsButton) => {
         c.taps = c.taps || {};
         c.taps[st.fp] = (c.taps[st.fp] || 0) + 1;
@@ -1702,6 +1716,8 @@
                 await askChoice(c);
             }
             if (c.cancelled) return;
+            // The form is gone as soon as Start is pressed: show the run (nothing spins yet) instead of a greyed Start while the first screen settles.
+            island.render(c, { state: 'running', step: undefined, stop, onSettings: settingsButton });
             for (let guard = 0; guard < c.maxSteps; guard++) {
                 if (c.cancelled) return;
                 const st = await settle(c);
