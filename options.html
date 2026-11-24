@@ -22,7 +22,8 @@
 
     <fieldset>
         <legend>Allowed hosts</legend>
-        <p class="hint">One per line, exact host or <code>*.domain.com</code>. The extension never acts anywhere else. Include every host of the flow (site, member area, payment page). A host that is not in the built-in list asks for a browser permission when you save.</p>
+        <label class="check"><input type="checkbox" id="allowAll" /> Allow all sites, without exception (http and https). The extension then works wherever you click it, including every host a sign-up flow passes through. The browser grants this access to the extension itself (manifest <code>&lt;all_urls&gt;</code>).</label>
+        <p class="hint">Off: the extension only acts on the hosts below. One per line, exact host or <code>*.domain.com</code>; include every host of the flow (site, member area, payment page).</p>
         <textarea id="allowedHosts" spellcheck="false"></textarea>
         <button id="resetHosts" type="button">Restore default hosts</button>
     </fieldset>

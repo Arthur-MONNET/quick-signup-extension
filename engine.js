@@ -11,7 +11,7 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const OVERLAY_ID = 'qs-overlay';
-    const BUILD = '15'; // see background.js
+    const BUILD = '17'; // see background.js
 
     // ---- Page helpers -------------------------------------------------------------------------------------------------
     const shown = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -92,6 +92,11 @@
     const LATER_RE = /^(later|plus tard|pi[uù] tardi|m[aá]s tarde|sp[aä]ter|mais tarde|skip|passer|ignorer)$/i;
     const CARD_RE = /cc-|card|cvv|cvc|expir/i;
     const NAME_USER_RE = /^(login|username|pseudo|nickname)$/i;
+    // The pseudo field is told by its name, or by its id when the site leaves the name empty.
+    const isUserField = (e) => NAME_USER_RE.test(e.name) || NAME_USER_RE.test(e.id);
+    const isEmailField = (e) => e.type === 'email' || e.name === 'email';
+    const isAgeSelect = (e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60);
+    const isGenderField = (e) => (e.tagName === 'SELECT' && (e.name === 'gender' || [...e.options].some((o) => /^(male|female)$/i.test(o.value)))) || (e.type === 'radio' && e.name === 'gender');
 
     const classify = () => {
         const fs = fields();
@@ -104,6 +109,9 @@
         else if (has((e) => CARD_RE.test(`${e.name} ${e.autocomplete}`))) type = 'payment';
         else if (has((e) => e.type === 'file')) type = 'photo';
         else if (has((e) => e.type === 'tel')) type = 'phone';
+        // Promotool register form on one screen (spiice landing paths such as /d7W/ve2): any two or more of gender, age, e-mail and pseudo
+        // together. The promotool options (with_gender, birthdate list/none, with_cgu...) decide which are there, so no fixed combination.
+        else if ([has(isEmailField), has(isUserField), has(isAgeSelect), has(isGenderField)].filter(Boolean).length >= 2) type = 'onepage';
         else if (has((e) => e.type === 'email' || e.name === 'email')) type = 'email';
         else if (has((e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60))) type = 'age';
         else if (has((e) => NAME_USER_RE.test(e.name))) type = 'username';
@@ -162,6 +170,7 @@
     // the step recognition never sees it. Compact while running, opens on hover or click, opens by itself when the run ends.
     const STEPS = [
         ['cta', 'Start'],
+        ['onepage', 'Sign-up form'],
         ['gender', 'Gender'],
         ['age', 'Age'],
         ['email', 'E-mail'],
@@ -834,6 +843,8 @@
         nextButton(c, st).click();
     };
 
+    // Consent boxes the extension may tick: by name on the candyshop forms, by id when the site leaves the name empty.
+    const CONSENT_RE = /(^|[^a-z])(accept_cguv|accept_privacy_policy|terms|cgu|cguv|cgv|privacy)/i;
     const STOP_AT_PAYMENT = 'Stopped on the payment page, as you asked: nothing was paid or typed. The account exists.';
     // With "stop on the payment page" on, reaching the end means this run had no payment page: say so.
     const doneRun = (c, message) => new StopRun('done', c.settings.stopAtPayment ? `${message} No payment page came up on this run, so there was nothing to stop on.` : message);
@@ -873,6 +884,76 @@
             for (const box of boxes) await ensureChecked(box);
             await sleep(200);
             nextButton(c, st).click();
+        },
+        onepage: async (c, st) => {
+            // The promotool register form on one screen. Fills whatever of gender, age, e-mail, pseudo and consent is there, in any
+            // combination, and again after each pass: some variants reveal the next field only once the previous one is filled.
+            const done = {};
+            const gendersOf = (field) => {
+                const options = field.tagName === 'SELECT' ? [...field.options] : [...document.querySelectorAll(`input[type=radio][name="${CSS.escape(field.name)}"]`)];
+                return options.filter((o) => o.value && !o.disabled);
+            };
+            for (let pass = 0; pass < 10; pass++) {
+                const fs = fields();
+                let acted = false;
+                const stray = fs.find((e) => e.type === 'checkbox' && !CONSENT_RE.test(`${e.name} ${e.id}`));
+                if (stray) throw new StopRun('unknown', `Unexpected checkbox "${stray.name || stray.id || 'unnamed'}": only the legal consents are ticked`);
+
+                const gender = !done.gender && fs.find(isGenderField);
+                if (gender) {
+                    // MALE/FEMALE by value when the site names them, else by position (the first choice is the man, the second the woman).
+                    const options = gendersOf(gender);
+                    const wanted = c.settings.gender === 'woman' ? /^female$/i : /^male$/i;
+                    const choice = options.find((o) => wanted.test(o.value)) || options[c.settings.gender === 'woman' ? 1 : 0];
+                    if (!choice) throw new StopRun('error', 'No gender option for the chosen account type');
+                    if (gender.tagName === 'SELECT') {
+                        setValue(gender, choice.value);
+                        verify(gender, choice.value, 'The gender');
+                    } else if (!choice.checked) choice.click();
+                    done.gender = acted = true;
+                }
+                const ageSelect = !done.age && fs.find(isAgeSelect);
+                if (ageSelect) {
+                    const age = String(c.settings.age);
+                    const option = [...ageSelect.options].find((o) => o.value === age) || [...ageSelect.options].find((o) => new RegExp(`^${age}\\b`).test(o.text));
+                    if (!option) throw new StopRun('error', `No age option for ${age}`);
+                    setValue(ageSelect, option.value);
+                    verify(ageSelect, option.value, 'The age');
+                    done.age = acted = true;
+                }
+                const emailField = !done.email && fs.find(isEmailField);
+                if (emailField) {
+                    setValue(emailField, c.vars.email);
+                    verify(emailField, c.vars.email, 'The e-mail');
+                    done.email = acted = true;
+                }
+                const userField = !done.user && fs.find(isUserField);
+                if (userField) {
+                    if (!c.pseudo) c.pseudo = genPseudo(c.settings.gender);
+                    await typeText(userField, c.pseudo);
+                    if (userField.value !== c.pseudo || BANNED_RE.test(userField.value)) throw new StopRun('error', 'The pseudo field does not hold the random pseudo: stopped before submitting');
+                    c.send({ kind: 'vars', pseudo: c.pseudo });
+                    done.user = acted = true;
+                }
+                for (const box of fs.filter((e) => e.type === 'checkbox' && !e.checked)) {
+                    await ensureChecked(box);
+                    acted = true;
+                }
+                if (!acted) break;
+                await sleep(500);
+            }
+            if (!Object.keys(done).length) throw new StopRun('unknown', 'Sign-up form recognised but none of its fields could be filled');
+            // The site may check the pseudo with the server while it is typed: let that answer come back before pressing the button.
+            const calls = () => performance.getEntriesByType('resource').filter((r) => /fetch|xmlhttprequest/.test(r.initiatorType)).length;
+            const before = calls();
+            await sleep(1000);
+            for (let t = 0; t < 15 && calls() === before; t++) await sleep(200);
+            await sleep(500);
+            const next = nextButton(c, st);
+            // The button stays disabled until the form is valid: wait for it rather than click a dead button.
+            for (let t = 0; t < 20 && next.disabled; t++) await sleep(200);
+            if (next.disabled) throw new StopRun('stuck', 'The sign-up button stayed disabled: the page does not consider the form valid.', describeUnknown(st));
+            next.click();
         },
         username: async (c, st) => {
             const field = need(slot(c, st, 'field', () => st.fs.find((e) => NAME_USER_RE.test(e.name))), 'pseudo input');
@@ -1138,7 +1219,7 @@
     const readSession = (source) => {
         try {
             const member = localStorage.getItem('dating_rt');
-            const signup = new URLSearchParams(location.search).get('rt') || localStorage.getItem('prophecy_rt');
+            const signup = new URLSearchParams(location.search).get('rt') || new URLSearchParams(location.hash.split('?')[1] || '').get('rt') || localStorage.getItem('prophecy_rt');
             const rt = (source === 'created' ? signup || member : member || signup) || '';
             const access = localStorage.getItem('dating_token') || '';
             return rt || access ? { rt, access } : null;
@@ -1391,11 +1472,12 @@
                 island.render(c, { state: 'running', step: st.type, stop, onSettings: settingsButton });
                 const outcome = await handlers[st.type](c, st);
                 if (outcome === 'retry') continue;
-                let changed = await waitChange(c, st.sig, st.type === 'username' ? 30000 : 10000);
+                const creates = st.type === 'username' || st.type === 'onepage';
+                let changed = await waitChange(c, st.sig, creates ? 30000 : 10000);
                 // The pseudo step creates the account, then the site redirects to another host, which can take a while (slow on prod).
                 // Never click NEXT again meanwhile: wait for the answer, and only retry when the page shows an error of its own.
                 // If the redirect completes, this page is replaced and the service worker resumes the run on the new one.
-                if (!changed && st.type === 'username') {
+                if (!changed && creates) {
                     const started = Date.now();
                     while (!changed && !c.cancelled && !pageMessages().length && Date.now() - started < 240000) {
                         island.render(c, { state: 'running', step: st.type, stop, onSettings: settingsButton, message: 'Account submitted, waiting for the site to answer…' });
@@ -1413,5 +1495,5 @@
         }
     };
 
-    globalThis.__qs = { BUILD, run, classify, genPseudo, BANNED_RE, resolve, selectorFor, nearestButton, island };
+    globalThis.__qs = { BUILD, run, classify, handlers, genPseudo, BANNED_RE, resolve, selectorFor, nearestButton, island };
 })();

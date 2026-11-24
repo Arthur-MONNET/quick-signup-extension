@@ -7,7 +7,7 @@ const local = chrome.storage.local;
 const session = chrome.storage.session;
 const LOG_LIMIT = 40;
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
-const BUILD = '15';
+const BUILD = '17';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
 const ACTIVE = ['setup', 'choose', 'running'];
 
@@ -16,7 +16,9 @@ const runKey = (tabId) => `run:${tabId}`;
 
 const getSettings = async () => {
     const stored = (await local.get('settings')).settings || {};
-    return { ...DEFAULT_SETTINGS, ...stored, allowedHosts: effectiveHosts(stored) };
+    const merged = { ...DEFAULT_SETTINGS, ...stored };
+    // "Allow all sites" is the pattern '*': every check against the allowed hosts then passes for any page.
+    return { ...merged, allowedHosts: merged.allowAllHosts ? ['*'] : effectiveHosts(stored) };
 };
 const getPrefs = async () => ({ fillPassword: true, gender: 'man', usePhoto: true, stopAtPayment: false, ...((await local.get('prefs')).prefs || {}) });
 const getRun = async (tabId) => (await session.get(runKey(tabId)))[runKey(tabId)] || null;
@@ -82,13 +84,15 @@ const finishRun = async (tabId, status, message, unknown, blockedHost) => {
     });
 };
 
-const inject = async (tabId) => {
+// soft: an early attempt (the page is still loading): a failure is ignored, a later event tries again.
+const inject = async (tabId, soft = false) => {
     const started = Date.now();
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < (soft ? 1 : 2); attempt++) {
         try {
             await chrome.scripting.executeScript({ target: { tabId }, files: ['engine.js', 'content.js'] });
             return;
         } catch (err) {
+            if (soft) return;
             // A page that redirects while loading can drop the frame under the injection: try again once.
             if (attempt === 0) {
                 await sleep(800);
@@ -459,19 +463,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
 });
 
-// A full page load while a run is active (redirect to another step or host): resume there, or stop if the host is not allowed.
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status !== 'complete') return;
+// Following the tab while a run is active. The bar must come back on every page of the flow, as early as possible (the commit of the
+// navigation, then DOM ready, then the end of the load as the safety net: the engine and its glue guard against being loaded twice).
+// A page on a host that is not allowed is not the end by itself: a redirect chain can pass through one. The run waits a few seconds
+// there and only stops if the tab stays on it.
+const OFF_HOST_GRACE_MS = 15000;
+const offHostTimers = new Map();
+const followTab = async (tabId, url, early) => {
     const run = await getRun(tabId);
     if (!run || !ACTIVE.includes(run.status)) return;
-    const host = hostOf(tab.url || '');
+    const host = hostOf(url || '');
     const settings = await getSettings();
-    if (!host || !isHostAllowed(host, settings.allowedHosts)) {
-        await finishRun(tabId, 'stopped', `Left the allowed hosts (${host || 'unknown'}): run stopped. Click the extension icon on that page to allow it and resume.`, null, host);
+    if (host && isHostAllowed(host, settings.allowedHosts)) {
+        clearTimeout(offHostTimers.get(tabId));
+        offHostTimers.delete(tabId);
+        await inject(tabId, early);
         return;
     }
-    await inject(tabId);
+    if (early || offHostTimers.has(tabId)) return;
+    offHostTimers.set(
+        tabId,
+        setTimeout(async () => {
+            offHostTimers.delete(tabId);
+            const current = await getRun(tabId);
+            if (!current || !ACTIVE.includes(current.status)) return;
+            const tab = await chrome.tabs.get(tabId).catch(() => null);
+            const nowHost = hostOf((tab && tab.url) || '');
+            if (nowHost && isHostAllowed(nowHost, (await getSettings()).allowedHosts)) return;
+            const left = nowHost || host || 'unknown';
+            await finishRun(tabId, 'stopped', `Left the allowed hosts (${left}): run stopped. Click the extension icon on that page to allow it and resume.`, null, nowHost || host);
+        }, OFF_HOST_GRACE_MS)
+    );
+};
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') followTab(tabId, tab.url, false);
 });
+if (chrome.webNavigation) {
+    const early = (details) => {
+        if (details.frameId === 0) followTab(details.tabId, details.url, true);
+    };
+    chrome.webNavigation.onCommitted.addListener(early);
+    chrome.webNavigation.onDOMContentLoaded.addListener(early);
+}
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     session.remove(runKey(tabId));

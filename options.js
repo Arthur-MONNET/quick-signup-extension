@@ -5,11 +5,18 @@ const BUILT_IN = new Set(chrome.runtime.getManifest().host_permissions.map((p) =
 
 let savedPassword = '';
 
+const syncAllowAll = () => {
+    $('allowedHosts').disabled = $('allowAll').checked;
+    $('resetHosts').disabled = $('allowAll').checked;
+};
+
 const load = async () => {
     const settings = { ...DEFAULT_SETTINGS, ...((await chrome.storage.local.get('settings')).settings || {}) };
     savedPassword = settings.password || '';
     $('emailDomain').value = settings.emailDomain;
     $('allowedHosts').value = settings.allowedHosts.join('\n');
+    $('allowAll').checked = settings.allowAllHosts !== false;
+    syncAllowAll();
     $('password').value = '';
     $('passwordState').textContent = savedPassword ? 'A password is saved (hidden). Type a new one to replace it.' : 'No password saved.';
 };
@@ -18,9 +25,10 @@ const save = async () => {
     $('error').hidden = true;
     $('saved').textContent = '';
     const hosts = [...new Set($('allowedHosts').value.split('\n').map(normalizeHost).filter(Boolean))];
-    if (!hosts.length) return fail('Add at least one host.');
+    if (!$('allowAll').checked && !hosts.length) return fail('Add at least one host, or allow all sites.');
     // Must run first: the permission prompt needs the click's user gesture.
-    const extra = hosts.filter((h) => !BUILT_IN.has(h)).map(originPattern);
+    // Every https site is already granted by the manifest ('*'); a narrower manifest would still ask here.
+    const extra = BUILT_IN.has('*') ? [] : hosts.filter((h) => !BUILT_IN.has(h)).map(originPattern);
     if (extra.length && !(await chrome.permissions.request({ origins: extra }))) return fail('Permission refused: those hosts cannot be used without it.');
 
     const typed = $('password').value;
@@ -28,7 +36,8 @@ const save = async () => {
         settings: {
             emailDomain: normalizeHost($('emailDomain').value),
             password: typed || savedPassword,
-            allowedHosts: hosts,
+            allowAllHosts: $('allowAll').checked,
+            allowedHosts: hosts.length ? hosts : DEFAULT_HOSTS,
         },
     });
     await load();
@@ -40,6 +49,7 @@ const fail = (message) => {
     $('error').textContent = message;
 };
 
+$('allowAll').addEventListener('change', syncAllowAll);
 $('save').addEventListener('click', save);
 $('resetHosts').addEventListener('click', () => {
     $('allowedHosts').value = DEFAULT_HOSTS.join('\n');

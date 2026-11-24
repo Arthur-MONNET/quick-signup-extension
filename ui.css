@@ -200,3 +200,6 @@ textarea {
     margin-left: 10px;
     color: var(--ok);
 }
+
+label.check { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 8px; }
+label.check input { width: auto; margin-top: 3px; }

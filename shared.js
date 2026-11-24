@@ -11,13 +11,17 @@ export const DEFAULT_HOSTS = [
     'secure.evo2pay.com',
     // The candyshop flow can hand over to another brand of the network (seen: preprod-480052.rencontre-ronde.fr).
     '*.rencontre-ronde.fr',
-    // Spiice (member.md): not verified with this extension yet.
+    // Spiice: the landing form (www-preprod.spiice.com/<path>) hands over to the brand's member area, a white-label host such as
+    // preprod-1183520.nextsocialsoft.com (auto-login gateway), then to a pay-vue page on the same family of hosts.
     'www-preprod.spiice.com',
     'www.spiice.com',
     '*.members.spiice.com',
+    '*.nextsocialsoft.com',
 ];
 
 export const DEFAULT_SETTINGS = {
+    // On by default: the extension works on any https site you start it on. Off: only the hosts listed in allowedHosts.
+    allowAllHosts: true,
     emailDomain: '', // set in the options page, never in the code
     password: '', // set in the options page, never in the code, never logged
     allowedHosts: DEFAULT_HOSTS,
@@ -54,6 +58,7 @@ export const isHostAllowed = (hostname, patterns) => {
     return (patterns || []).some((raw) => {
         const p = normalizeHost(raw);
         if (!p) return false;
+        if (p === '*') return true;
         if (p.startsWith('*.')) return host.endsWith(p.slice(1)) && host.length > p.length - 1;
         return host === p;
     });
