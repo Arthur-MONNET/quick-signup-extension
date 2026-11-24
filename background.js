@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, PHOTO_ORIGIN, accountId, buildEmail, citySuggestionPa
 const local = chrome.storage.local;
 const session = chrome.storage.session;
 const LOG_LIMIT = 40;
+const MEDIA_BLUR_MENU = 'toggle-media-blur';
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
 const BUILD = '18';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
@@ -618,6 +619,50 @@ const notice = (tabId, text) =>
             },
         })
         .catch(() => undefined);
+
+const toggleMediaBlur = async (tab) => {
+    if (tab?.id === undefined) return;
+    const host = hostOf(tab.url || '');
+    if (!host || !isHostAllowed(host, (await getSettings()).allowedHosts)) return;
+
+    try {
+        const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            args: [host],
+            func: (expectedHost) => {
+                if (location.hostname !== expectedHost) return null;
+                const current = globalThis.__qsMediaBlur;
+                if (current) {
+                    document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => sheet !== current);
+                    delete globalThis.__qsMediaBlur;
+                    return false;
+                }
+                const sheet = new CSSStyleSheet();
+                sheet.replaceSync('img, video, svg image { filter: blur(24px) !important; }');
+                document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+                globalThis.__qsMediaBlur = sheet;
+                return true;
+            },
+        });
+        if (result !== null) await notice(tab.id, result ? 'Media blur on for this page.' : 'Media blur off.');
+    } catch (error) {
+        await notice(tab.id, `Quick Signup could not toggle media blur: ${error.message}`);
+    }
+};
+
+chrome.runtime.onInstalled.addListener(() => {
+    const settings = { title: 'Toggle media blur', contexts: ['action'], documentUrlPatterns: ['http://*/*', 'https://*/*'] };
+    chrome.contextMenus.create({ id: MEDIA_BLUR_MENU, ...settings }, () => {
+        if (chrome.runtime.lastError) {
+            chrome.contextMenus.update(MEDIA_BLUR_MENU, settings, () => {
+                if (chrome.runtime.lastError) console.error('Quick Signup could not register the media blur menu:', chrome.runtime.lastError.message);
+            });
+        }
+    });
+});
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === MEDIA_BLUR_MENU) void toggleMediaBlur(tab);
+});
 
 // One click on the icon (or the shortcut) starts everything: the bar in the page takes it from there.
 const trigger = async (tab) => {
