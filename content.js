@@ -5,7 +5,18 @@
     globalThis.__qsLoop = true;
     // Identifies this page instance: after a redirect the service worker ignores what the replaced page still sends.
     const from = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const send = (message) => chrome.runtime.sendMessage({ ...message, from }).catch(() => undefined);
+    // After the extension is reloaded, the script left in an open page loses its connection: sendMessage then THROWS (it does not reject),
+    // so a promise .catch is not enough. That orphaned script stops itself instead of logging errors.
+    let orphaned = false;
+    const send = async (message) => {
+        if (orphaned) return undefined;
+        try {
+            return await chrome.runtime.sendMessage({ ...message, from });
+        } catch (error) {
+            if (!chrome.runtime || !chrome.runtime.id) orphaned = true;
+            return undefined;
+        }
+    };
 
     const hello = await send({ kind: 'hello' });
     if (!hello || !hello.resume) {
@@ -20,6 +31,7 @@
         globalThis.__qsLoop = false;
         return;
     }
+    let cancelledByUser = false;
     const ctx = {
         vars: hello.vars,
         needsSetup: Boolean(hello.setup),
@@ -30,7 +42,12 @@
         history: hello.history || [],
         learned: hello.learned || {},
         settings: hello.settings,
-        cancelled: false,
+        get cancelled() {
+            return orphaned || cancelledByUser;
+        },
+        set cancelled(value) {
+            cancelledByUser = value;
+        },
         send,
         // The password is fetched only at the Password step, only when the run asked for it, and never logged.
         getPhoto: async () => (await send({ kind: 'photo' })) || { error: 'no answer from the service worker' },

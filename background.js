@@ -1,7 +1,7 @@
 // Service worker: starts a run (click on the icon or keyboard shortcut), keeps the per-tab run state in chrome.storage.session
 // (survives the worker sleeping and page redirects, cleared when the browser closes), re-injects the engine after every
 // full page load while a run is active, and remembers the journeys seen per site in chrome.storage.local.
-import { DEFAULT_SETTINGS, PHOTO_ORIGIN, accountId, buildEmail, citySuggestionPattern, decodeJwt, effectiveHosts, isHostAllowed, loginLink, looksLikeJwt, normalizeHost, originPattern, photoQuery, publicAccount, randomProfile, safeColor, siteKeyOf, upsertAccount } from './shared.js';
+import { DEFAULT_SETTINGS, PHOTO_ORIGIN, accountId, buildEmail, citySuggestionPattern, decodeJwt, isHostAllowed, loginLink, looksLikeJwt, normalizeHost, photoQuery, publicAccount, randomProfile, safeColor, siteKeyOf, upsertAccount } from './shared.js';
 
 const local = chrome.storage.local;
 const session = chrome.storage.session;
@@ -17,9 +17,8 @@ const runKey = (tabId) => `run:${tabId}`;
 
 const getSettings = async () => {
     const stored = (await local.get('settings')).settings || {};
-    const merged = { ...DEFAULT_SETTINGS, ...stored };
-    // "Allow all sites" is the pattern '*': every check against the allowed hosts then passes for any page.
-    return { ...merged, allowedHosts: merged.allowAllHosts ? ['*'] : effectiveHosts(stored) };
+    // Every web page is allowed: the pattern '*' makes each host check pass (only non-web pages, such as the browser's own, are refused).
+    return { ...DEFAULT_SETTINGS, ...stored, allowedHosts: ['*'] };
 };
 const getPrefs = async () => ({ fillPassword: true, gender: 'man', usePhoto: true, stopAtPayment: false, ...((await local.get('prefs')).prefs || {}) });
 const getRun = async (tabId) => (await session.get(runKey(tabId)))[runKey(tabId)] || null;
@@ -682,25 +681,10 @@ const trigger = async (tab) => {
         await chrome.tabs.sendMessage(tab.id, { kind: 'reveal' }).catch(() => undefined);
         return;
     }
-    if (run && run.blockedHost && run.blockedHost === host) {
-        // The flow was handed over to this host and stopped: allow it (the browser asks for the permission) and resume.
-        if (await chrome.permissions.request({ origins: [originPattern(host)] }).catch(() => false)) {
-            const stored = (await local.get('settings')).settings || {};
-            await local.set({ settings: { ...stored, allowedHosts: [...new Set([...effectiveHosts(stored), host])] } });
-            await updateRun(tab.id, (r) => {
-                r.status = 'running';
-                r.blockedHost = null;
-                r.message = '';
-            });
-            setBadge(tab.id, 'running');
-            await inject(tab.id);
-            return;
-        }
-    }
     const result = await startRun(tab.id).catch((err) => ({ ok: false, error: err.message }));
     if (!result.ok) {
         setBadge(tab.id, 'error');
-        await notice(tab.id, result.error === 'host-not-allowed' ? `Quick Signup: ${result.host || 'this page'} is not in the allowed hosts. Add it in the extension options.` : `Quick Signup could not start: ${result.error}`);
+        await notice(tab.id, result.error === 'host-not-allowed' ? 'Quick Signup works on web pages only (http or https): open the site you want to sign up on, then click the icon.' : `Quick Signup could not start: ${result.error}`);
     }
 };
 

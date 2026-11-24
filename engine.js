@@ -1289,6 +1289,7 @@
     // for every image, font and tracker): the screen is usable long before. Up to about 12 s for an unknown screen.
     const settle = async (c) => {
         let st = classify();
+        let sameUnknown = 0;
         for (let t = 0; t < 100 && !c.cancelled; t++) {
             await sleep(120);
             if (document.readyState !== 'loading' && st.type !== 'unknown') {
@@ -1296,7 +1297,13 @@
                 const again = classify();
                 if (again.sig === st.sig) return st;
                 st = again;
-            } else st = classify();
+            } else {
+                const again = classify();
+                // An unknown screen that has not changed for about 2.5 s is what it is (a quiz step, an entry page): no need to wait 12 s.
+                sameUnknown = again.type === 'unknown' && again.sig === st.sig && document.readyState !== 'loading' ? sameUnknown + 1 : 0;
+                st = again;
+                if (sameUnknown >= 20) return st;
+            }
         }
         return st;
     };
@@ -1565,6 +1572,18 @@
 
     // A screen nothing recognises but that has buttons (an entry page, a quiz question): ask which button continues the sign-up, click it,
     // remember it for this screen (by its heading) so the next run needs no help. Returns when the page moved on.
+    // The affirmative button of a yes/no screen: its label (first line, without a percentage) or its classes, id and data attributes.
+    const YES_RE = /^(yes|oui|ja|sí|si|sì|sim|da|tak|evet|ja,? ich|yes,? i am|oui,? je)\b/i;
+    const isYesControl = (e) => {
+        const label = text(e).split('\n')[0].replace(/[%\d\s]+$/g, '').trim();
+        const attrs = `${e.id} ${String(e.className || '')} ${e.getAttribute('data-answer') || ''} ${e.getAttribute('value') || ''}`;
+        return YES_RE.test(label) || /(^|[-_\s])(yes|oui)($|[-_\s])/i.test(attrs);
+    };
+    const REFUSAL_RE = /^(no|non|nein|nee|não|nao|nope|no,? thanks?|non merci|no thanks|cancel|annuler|close|fermer|skip|passer|later|plus tard|refuse|decline|dismiss|back|retour|return|menu|previous|pr[ée]c[ée]dent|zur[üu]ck)\b/i;
+    const FORWARD_RE = /sign[-_ ]?up|regist|inscri|create|cr[ée]er|join|rejoindre|start|commenc|d[ée]marr|discuss|chat|next|suivant|continu|search|rechercher|find|trouver|discover|d[ée]couvr|view|voir|enter|entrer|go\b|ok\b|accept|agree/i;
+    const isRefusalControl = (e) => REFUSAL_RE.test(text(e).split('\n')[0].trim()) || /(^|[-_\s])(no|non|cancel|close|skip|back|return)($|[-_\s])|btn-?no(confirm)?\b/i.test(`${e.id} ${String(e.className || '')}`);
+    const NEXT_RE = /^(next|suivant|weiter|siguiente|avanti|pr[óo]ximo|volgende|continue|continuer|continuar|ok)\b/i;
+    const forwardScore = (e) => (NEXT_RE.test(text(e).split('\n')[0].trim()) ? 200 : 0) + (isYesControl(e) ? 100 : 0) + (FORWARD_RE.test(`${text(e)} ${e.id} ${String(e.className || '')}`) ? 10 : 0) + (e.type === 'submit' ? 3 : 0) + (e.closest('form') ? 1 : 0);
     const tapCandidates = () => buttons().filter((e) => e.tagName !== 'A' && text(e) && !isLoginControl(e) && !e.closest('footer,header,nav'));
     const unknownTap = async (c, st, stop, settingsButton) => {
         c.taps = c.taps || {};
@@ -1576,7 +1595,11 @@
         if (!target) {
             const options = tapCandidates();
             if (!options.length) return false;
-            const index = await new Promise((resolve) => {
+            // Never ask: a yes/no question is answered yes; otherwise the most plausible way forward is taken (a "yes", then a sign-up or
+            // next-like button, then the first button that is not a refusal). Only when nothing but refusals is left does the bar ask.
+            const forward = options.filter((e) => !isRefusalControl(e));
+            const ranked = [...forward].sort((a, b) => forwardScore(b) - forwardScore(a));
+            const index = ranked.length ? options.indexOf(ranked[0]) : await new Promise((resolve) => {
                 c.choiceResolve = resolve;
                 island.render(c, {
                     state: 'unknown',

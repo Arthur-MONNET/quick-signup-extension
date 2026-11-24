@@ -1,30 +1,9 @@
-// Pure helpers shared by the service worker and the options page (ES module, no DOM, no chrome.* calls).
+// Pure helpers used by the service worker (ES module, no DOM, no chrome.* calls).
 
-// Hosts the extension may act on. Preprod first. The list is editable in the options page; hosts outside the
-// manifest "host_permissions" need an extra permission that the options page requests when saving.
-export const DEFAULT_HOSTS = [
-    'www-preprod.candyshop.com',
-    'preprod-meet.candyshop.com',
-    'secure-preprod.evo2pay.com',
-    'www.candyshop.com',
-    'meet.candyshop.com',
-    'secure.evo2pay.com',
-    // The candyshop flow can hand over to another brand of the network (seen: preprod-480052.rencontre-ronde.fr).
-    '*.rencontre-ronde.fr',
-    // Spiice: the landing form (www-preprod.spiice.com/<path>) hands over to the brand's member area, a white-label host such as
-    // preprod-1183520.nextsocialsoft.com (auto-login gateway), then to a pay-vue page on the same family of hosts.
-    'www-preprod.spiice.com',
-    'www.spiice.com',
-    '*.members.spiice.com',
-    '*.nextsocialsoft.com',
-];
-
+// The extension works on any web page you start it on (manifest <all_urls>): there is no list of hosts and no options page.
 export const DEFAULT_SETTINGS = {
-    // On by default: the extension works on any https site you start it on. Off: only the hosts listed in allowedHosts.
-    allowAllHosts: true,
-    emailDomain: '', // set in the options page, never in the code
-    password: '', // set in the options page, never in the code, never logged
-    allowedHosts: DEFAULT_HOSTS,
+    emailDomain: '', // set once in the bar (Settings), never in the code
+    password: '', // set once in the bar (Settings), never in the code, never logged
 };
 
 // Age and city are drawn at random for every account (never a setting).
@@ -47,9 +26,6 @@ export const photoQuery = (gender, age) => `time=${Date.now()}&gender=${gender =
 // Test accounts are recognisable by their e-mail: test-<DDMM>-<HHmm>-<3 random chars>@domain (unique per attempt, no counter to keep).
 export const EMAIL_PREFIX = 'test';
 
-// Built-in hosts are always allowed (so new defaults reach existing installs); the saved list only adds to them.
-export const effectiveHosts = (stored) => [...new Set([...DEFAULT_HOSTS, ...((stored && stored.allowedHosts) || [])])];
-
 export const normalizeHost = (value) => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/?#].*$/, '');
 
 export const isHostAllowed = (hostname, patterns) => {
@@ -65,7 +41,6 @@ export const isHostAllowed = (hostname, patterns) => {
 };
 
 // Chrome match pattern for a host entry ("*.x.com" -> "https://*.x.com/*").
-export const originPattern = (raw) => `https://${normalizeHost(raw)}/*`;
 
 // "www-preprod.candyshop.com" -> "candyshop.com": the key under which a journey is remembered (prod and preprod share it).
 export const siteKeyOf = (hostname) => normalizeHost(hostname).split('.').slice(-2).join('.');
@@ -125,7 +100,7 @@ export const upsertAccount = (list, incoming, now = Date.now()) => {
     return [merged, ...rest].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, ACCOUNTS_LIMIT);
 };
 
-// What the bar and the options page may see: never the tokens.
+// What the bar may see: never the tokens.
 export const publicAccount = (account, brand, now = Date.now()) => ({
     id: account.id,
     pseudo: account.pseudo || '',
