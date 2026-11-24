@@ -96,7 +96,7 @@
     const isUserField = (e) => NAME_USER_RE.test(e.name) || NAME_USER_RE.test(e.id);
     const isEmailField = (e) => e.type === 'email' || e.name === 'email';
     const isAgeSelect = (e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60);
-    const isGenderField = (e) => (e.tagName === 'SELECT' && (e.name === 'gender' || [...e.options].some((o) => /^(male|female)$/i.test(o.value)))) || (e.type === 'radio' && e.name === 'gender');
+    const isGenderField = (e) => (e.tagName === 'SELECT' && (e.name === 'gender' || e.name === 'genderSelect' || [...e.options].some((o) => /^(male|female)$/i.test(o.value)))) || (e.type === 'radio' && e.name === 'gender');
 
     const classify = () => {
         const fs = fields();
@@ -115,7 +115,7 @@
         else if (has((e) => e.type === 'email' || e.name === 'email')) type = 'email';
         else if (has((e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60))) type = 'age';
         else if (has(isUserField)) type = 'username';
-        else if (has((e) => e.tagName === 'SELECT' && e.name === 'gender') || has((e) => e.type === 'radio' && e.name === 'gender')) type = 'gender';
+        else if (has(isGenderField)) type = 'gender';
         else if (has((e) => e.type === 'text' && (e.classList.contains('location-input') || e.closest('[class*=typehead],[class*=typeahead]'))) || (fs.length && /live in|habite|ville|city|where/i.test(h))) type = 'city';
         // Interests screen: clickable chips next to a hidden "hobbies" input (the chips are not form fields).
         else if (!fs.length && document.querySelector('input[type=hidden][name^=hobbies]')) type = 'hobbies';
@@ -851,6 +851,22 @@
         if (el.value !== expected) throw new StopRun('error', `${what} was not kept by the page`);
     };
 
+    const fillGender = (field, gender) => {
+        const select = field.tagName === 'SELECT';
+        const options = select ? [...field.options] : [...document.querySelectorAll('input[type=radio][name=gender]')];
+        const enabled = options.filter((option) => option.value && !option.disabled);
+        const woman = gender === 'woman';
+        // Legacy forms list women first and encode gender as 1 (woman) or 2 (man).
+        const legacy = field.name === 'genderSelect';
+        const value = legacy ? (woman ? '1' : '2') : (woman ? 'female' : 'male');
+        const choice = enabled.find((option) => option.value.toLowerCase() === value) || (!legacy && enabled[woman ? 1 : 0]);
+        if (!choice) throw new StopRun('error', 'No gender option for the chosen account type');
+        if (select) {
+            if (field.value !== choice.value) setValue(field, choice.value);
+            verify(field, choice.value, 'The gender');
+        } else if (!choice.checked) choice.click();
+    };
+
     // Carousel screens: the page preselects an item when it mounts (about a second later). Keep that default and go on.
     const keepDefault = async (c, st) => {
         await sleep(600);
@@ -868,14 +884,8 @@
             slot(c, st, 'cta', () => resolve('button#signUp')).click();
         },
         gender: async (c, st) => {
-            const field = need(slot(c, st, 'field', () => resolve('select[name=gender]')), 'gender select');
-            if (field.tagName === 'SELECT') {
-                // The site lists "man" first and preselects it: "man" keeps the default, "woman" takes the other option.
-                if (c.genderDefault === undefined) c.genderDefault = field.value;
-                const other = [...field.options].find((o) => o.value !== c.genderDefault);
-                const wanted = c.settings.gender === 'woman' && other ? other.value : c.genderDefault;
-                if (field.value !== wanted) setValue(field, wanted);
-            }
+            const field = need(st.fs.find(isGenderField), 'gender input');
+            fillGender(field, c.settings.gender);
             await sleep(200);
             nextButton(c, st).click();
         },
@@ -903,10 +913,6 @@
             // The promotool register form on one screen. Fills whatever of gender, age, e-mail, pseudo and consent is there, in any
             // combination, and again after each pass: some variants reveal the next field only once the previous one is filled.
             const done = {};
-            const gendersOf = (field) => {
-                const options = field.tagName === 'SELECT' ? [...field.options] : [...document.querySelectorAll(`input[type=radio][name="${CSS.escape(field.name)}"]`)];
-                return options.filter((o) => o.value && !o.disabled);
-            };
             for (let pass = 0; pass < 10; pass++) {
                 const fs = fields();
                 let acted = false;
@@ -915,15 +921,7 @@
 
                 const gender = !done.gender && fs.find(isGenderField);
                 if (gender) {
-                    // MALE/FEMALE by value when the site names them, else by position (the first choice is the man, the second the woman).
-                    const options = gendersOf(gender);
-                    const wanted = c.settings.gender === 'woman' ? /^female$/i : /^male$/i;
-                    const choice = options.find((o) => wanted.test(o.value)) || options[c.settings.gender === 'woman' ? 1 : 0];
-                    if (!choice) throw new StopRun('error', 'No gender option for the chosen account type');
-                    if (gender.tagName === 'SELECT') {
-                        setValue(gender, choice.value);
-                        verify(gender, choice.value, 'The gender');
-                    } else if (!choice.checked) choice.click();
+                    fillGender(gender, c.settings.gender);
                     done.gender = acted = true;
                 }
                 const ageSelect = !done.age && fs.find(isAgeSelect);
