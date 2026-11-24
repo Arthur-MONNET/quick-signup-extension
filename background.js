@@ -8,7 +8,7 @@ const session = chrome.storage.session;
 const LOG_LIMIT = 40;
 const MEDIA_BLUR_MENU = 'toggle-media-blur';
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
-const BUILD = '19';
+const BUILD = '21';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
 const ACTIVE = ['setup', 'choose', 'running'];
 

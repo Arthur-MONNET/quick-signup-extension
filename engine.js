@@ -11,7 +11,7 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const OVERLAY_ID = 'qs-overlay';
-    const BUILD = '19'; // see background.js
+    const BUILD = '21'; // see background.js
 
     // ---- Page helpers -------------------------------------------------------------------------------------------------
     const shown = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -107,6 +107,24 @@
     const CAMPAIGN_AGE_RE = /^(Select your age|What is the ideal age for you|Sélectionnez votre âge|Quel est l'âge idéal pour vous)\s*\??$/i;
     const isCampaignPseudo = (field) => field.type === 'text' && CAMPAIGN_PSEUDO_RE.test(campaignQuestion(field));
 
+    // Entry controls, as the portals' own configs (src/portals/*/*/<alias>.json, promoToolsConfig) name them. Registration triggers:
+    // #signUp, .signUp, .registerBtn, .js-register. Log-in triggers: #loginBtn, .loginBtn, #mobile-login, #desktop-login. Google
+    // sign-up: .bt-google-signup(2). Only the first group is ever a way into the sign-up.
+    const LOGIN_SEL = '#loginBtn,.loginBtn,#mobile-login,#desktop-login';
+    const THIRD_PARTY_SEL = '.bt-google-signup,.bt-google-signup2,[class*=google-signup]';
+    const REGISTER_SEL = '#signUp,.signUp,#registerBtn,.registerBtn,.js-register';
+    // A control that logs an existing member in, or signs up through a third party: told by the config selectors above, by its id, name,
+    // classes and data attributes, by what it opens (a /login address) and, as a safety net only, by its label. Used to EXCLUDE.
+    const LOGIN_RE = /log[-_ ]?in|sign[-_ ]?in|connexion|\bconnection\b|connecter|already a member|déjà (membre|inscrit)|bereits mitglied|anmelden|iniciar sesi|accedi|entrar|inloggen/i;
+    const THIRD_PARTY_RE = /google|facebook|apple[-_ ]?id|oauth|(continue|continuer|sign in|se connecter|inscrire) (with|avec)/i;
+    const isLoginControl = (e) => {
+        if (!e) return false;
+        if (e.matches(`${LOGIN_SEL},${THIRD_PARTY_SEL}`) || e.closest(`${LOGIN_SEL},${THIRD_PARTY_SEL}`)) return true;
+        const attrs = [e.id, e.name, String(e.className || ''), e.getAttribute('data-testid'), e.getAttribute('data-action'), e.getAttribute('aria-controls'), e.getAttribute('href'), e.getAttribute('aria-label')].filter(Boolean).join(' ');
+        return LOGIN_RE.test(attrs) || LOGIN_RE.test(text(e)) || THIRD_PARTY_RE.test(attrs) || THIRD_PARTY_RE.test(text(e)) || /login|signin|connexion/i.test(e.getAttribute('formaction') || '');
+    };
+    // The registration entry button of a landing page, among the visible triggers of REGISTER_SEL (never a log-in or third-party one).
+    const ctaButton = () => [resolve('button#signUp'), ...[...document.querySelectorAll(REGISTER_SEL)].filter((e) => shown(e) && !inBanner(e))].find((e) => e && !isLoginControl(e)) || null;
     const classify = () => {
         const fs = fields();
         const has = (f) => fs.some(f);
@@ -123,6 +141,9 @@
         // Promotool register form on one screen (spiice landing paths such as /d7W/ve2): any two or more of gender, age, e-mail and pseudo
         // together. The promotool options (with_gender, birthdate list/none, with_cgu...) decide which are there, so no fixed combination.
         else if ([has(isEmailField), has(isUserField), has(isAgeSelect), has(isGenderField)].filter(Boolean).length >= 2) type = 'onepage';
+        // The same form with its fields revealed one by one: only the first is there yet, but a legal consent box on the same screen
+        // says it is the whole sign-up (the separate gender / age steps never carry one).
+        else if ((has(isGenderField) || has(isAgeSelect)) && has((e) => e.type === 'checkbox' && CONSENT_RE.test(`${e.name} ${e.id}`))) type = 'onepage';
         else if (has((e) => e.type === 'email' || e.name === 'email')) type = 'email';
         else if (has((e) => e.tagName === 'SELECT' && (e.name === 'birthdate' || e.options.length > 60))) type = 'age';
         else if (has(isUserField) || (campaignField && isCampaignPseudo(campaignField))) type = 'username';
@@ -140,10 +161,10 @@
         else if (!fs.length && document.querySelector('input[type=hidden][name=relationshipTag]')) type = 'badge';
         // Icebreaker screen: a carousel of predefined messages next to a hidden "predefinedWelcomeMessage" input; one is preselected.
         else if (!fs.length && document.querySelector('input[type=hidden][name=predefinedWelcomeMessage],input[type=hidden][name*=welcome i],textarea[name=msg],textarea[name*=welcome i]')) type = 'welcome';
-        else if (!fs.length && resolve('button#signUp')) type = 'cta';
+        else if (!fs.length && ctaButton()) type = 'cta';
         const names = [...new Set(fs.map((e) => e.name || e.type))].sort().join(',');
         const stepQuestion = type === 'preference' || (type === 'age' && CAMPAIGN_AGE_RE.test(question)) ? question : '';
-        const fp = `${type}:${names}${stepQuestion ? `:${stepQuestion}` : ''}`.slice(0, 120);
+        const fp = `${type}:${names}${stepQuestion ? `:${stepQuestion}` : type === 'unknown' ? `|${h}` : ''}`.slice(0, 120);
         return { type, fp, sig: `${fp}|${routeKey()}`, h, fs };
     };
 
@@ -289,6 +310,8 @@
         dd { margin: 0; word-break: break-all; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
         .msg { margin: 8px 0 0; color: #c9ced6; }
         pre { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: #14171c; color: #c9ced6; font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+        .choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+        .choices:empty { display: none; }
         .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
         .actions:empty { display: none; }
         button { font: inherit; border: 1px solid #3b414b; border-radius: 6px; padding: 4px 12px; cursor: pointer; background: transparent; color: #e8eaed; }
@@ -470,7 +493,8 @@
             const detail = el('pre');
             const actions = el('div', 'actions');
             const runBox = el('div', 'runbox');
-            runBox.append(ident, list, msg, detail, actions);
+            const choices = el('div', 'choices');
+            runBox.append(ident, list, msg, detail, choices, actions);
             const formBox = el('div', 'formbox');
             // Tabs: the same bubble shows the sign-up, the saved accounts or the settings. The header above always follows the run.
             const tabs = el('div', 'tabs');
@@ -522,7 +546,7 @@
                 });
             }
             document.documentElement.append(host);
-            nodes = { host, root, line, label, count, trace, tracePath, arc, mbarFill, list, ident, msg, detail, actions, inner, formBox, tabButtons };
+            nodes = { host, root, line, label, count, trace, tracePath, arc, mbarFill, list, ident, msg, detail, choices, actions, inner, formBox, tabButtons };
             // The route follows the bubble frame by frame while it folds, unfolds or the window is resized.
             new ResizeObserver(redraw).observe(root);
             addEventListener('resize', redraw);
@@ -538,7 +562,7 @@
         };
         const render = (c, view) => {
             if (!nodes || !nodes.host.isConnected) build();
-            const { root, line, label, count, list, ident, msg, detail, actions, inner, formBox } = nodes;
+            const { root, line, label, count, list, ident, msg, detail, choices, actions, inner, formBox } = nodes;
             c.lastView = view;
             const state = view.state;
             // The header always follows the run, whatever tab is open.
@@ -584,8 +608,15 @@
             detail.hidden = !info;
             detail.textContent = info ? [`Step: ${info.fp}`, `Heading: ${info.heading}`, `Fields: ${info.fields.join(', ') || '-'}`, `Buttons: ${info.buttons.join(' | ') || '-'}`, `Hidden: ${(info.hidden || []).join(', ') || '-'}`, `Page says: ${(info.messages || []).join(' | ') || '-'}`].join('\n') : '';
             // Footer: only the primary action of the view (Stop while running). Close, Settings and Accounts live in the tab row.
+            choices.replaceChildren(
+                ...(view.choices || []).map((name, i) => {
+                    const pick = el('button', 'primary', name);
+                    pick.addEventListener('click', () => view.onChoose(i));
+                    return pick;
+                })
+            );
             actions.replaceChildren();
-            if (state === 'running') {
+            if (state === 'running' || view.choices) {
                 const stopBtn = el('button', 'stop', 'Stop');
                 stopBtn.addEventListener('click', view.stop);
                 actions.append(stopBtn);
@@ -862,6 +893,18 @@
             'advance button'
         );
     // The screen has no <form> (candyshop member area): take the first ancestor of the field that holds visible buttons, if it holds exactly one.
+    // The first text input after `anchor` that sits in the same form: the pseudo of a modal whose inputs carry no name or id.
+    const textAfter = (anchor, fs) => {
+        const form = anchor.closest('form');
+        const list = fs.filter((e) => e.type === 'text' && e !== anchor && (!form || form.contains(e)));
+        return list.find((e) => anchor.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) || null;
+    };
+    // The visible submit button of the form that holds `field`, when there is exactly one.
+    const submitFor = (field) => {
+        const form = field && field.closest('form');
+        const own = form ? [...form.querySelectorAll('button,input[type=submit]')].filter((e) => shown(e) && !inBanner(e) && e.type !== 'button' && e.type !== 'reset') : [];
+        return own.length === 1 ? own[0] : null;
+    };
     const nearestButton = (field) => {
         for (let node = field.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
             const own = [...node.querySelectorAll('button,input[type=submit]')].filter((e) => shown(e) && !inBanner(e));
@@ -909,7 +952,7 @@
 
     const handlers = {
         cta: async (c, st) => {
-            slot(c, st, 'cta', () => resolve('button#signUp')).click();
+            need(slot(c, st, 'cta', () => ctaButton()), 'sign-up button').click();
         },
         gender: async (c, st) => {
             const field = need(st.fs.find(isGenderField), 'gender input');
@@ -984,13 +1027,23 @@
                     verify(emailField, c.vars.email, 'The e-mail');
                     done.email = acted = true;
                 }
-                const userField = !done.user && fs.find(isUserField);
+                // Some modals leave the pseudo input without name or id: it is then the first text input after the e-mail one, in its form.
+                const mailInput = fs.find(isEmailField);
+                const userField = !done.user && (fs.find(isUserField) || (mailInput && textAfter(mailInput, fs)));
                 if (userField) {
                     if (!c.pseudo) c.pseudo = genPseudo(c.settings.gender);
                     await typeText(userField, c.pseudo);
                     if (userField.value !== c.pseudo || BANNED_RE.test(userField.value)) throw new StopRun('error', 'The pseudo field does not hold the random pseudo: stopped before submitting');
                     c.send({ kind: 'vars', pseudo: c.pseudo });
                     done.user = acted = true;
+                }
+                // A required list that is none of the above (promotool with_criteria) and still empty: its first real choice will do.
+                for (const select of fs.filter((e) => e.tagName === 'SELECT' && !e.value && e !== gender && e !== ageSelect && !isGenderField(e) && !isAgeSelect(e))) {
+                    const first = [...select.options].find((o) => o.value && !o.disabled);
+                    if (first) {
+                        setValue(select, first.value);
+                        acted = true;
+                    }
                 }
                 for (const box of fs.filter((e) => e.type === 'checkbox' && !e.checked)) {
                     await ensureChecked(box);
@@ -1010,7 +1063,9 @@
             await sleep(1000);
             for (let t = 0; t < 15 && calls() === before; t++) await sleep(200);
             await sleep(500);
-            const next = nextButton(c, st);
+            // The button of the form that holds these fields (a chat box elsewhere on the page has its own "Send").
+            const anchor = fields().find(isEmailField) || fields().find(isAgeSelect) || fields().find(isGenderField);
+            const next = submitFor(anchor) || nextButton(c, st);
             // The button stays disabled until the form is valid: wait for it rather than click a dead button.
             for (let t = 0; t < 20 && next.disabled; t++) await sleep(200);
             if (next.disabled) throw new StopRun('stuck', 'The sign-up button stayed disabled: the page does not consider the form valid.', describeUnknown(st));
@@ -1508,9 +1563,50 @@
         });
     };
 
+    // A screen nothing recognises but that has buttons (an entry page, a quiz question): ask which button continues the sign-up, click it,
+    // remember it for this screen (by its heading) so the next run needs no help. Returns when the page moved on.
+    const tapCandidates = () => buttons().filter((e) => e.tagName !== 'A' && text(e) && !isLoginControl(e) && !e.closest('footer,header,nav'));
+    const unknownTap = async (c, st, stop, settingsButton) => {
+        c.taps = c.taps || {};
+        c.taps[st.fp] = (c.taps[st.fp] || 0) + 1;
+        if (c.taps[st.fp] > 4) throw new StopRun('stuck', 'This screen did not move on after several clicks.', describeUnknown(st));
+        const learned = c.learned[st.fp] && c.learned[st.fp].slots && c.learned[st.fp].slots.tap;
+        let target = learned ? resolve(learned) : null;
+        if (target && isLoginControl(target)) target = null; // never click a log-in control, even if it was remembered
+        if (!target) {
+            const options = tapCandidates();
+            if (!options.length) return false;
+            const index = await new Promise((resolve) => {
+                c.choiceResolve = resolve;
+                island.render(c, {
+                    state: 'unknown',
+                    step: c.lastStep,
+                    stop,
+                    onSettings: settingsButton,
+                    message: 'Unrecognised screen. Click the button that continues the SIGN-UP (log-in buttons are not offered): the choice is remembered for this screen.',
+                    choices: options.map((e) => text(e).slice(0, 28)),
+                    onChoose: (i) => resolve(i),
+                });
+            });
+            c.choiceResolve = null;
+            if (c.cancelled || index < 0) return true;
+            target = options[index];
+            const selector = selectorFor(target);
+            if (selector) {
+                c.send({ kind: 'learn', fp: st.fp, type: 'unknown', slots: { tap: selector } });
+                c.learned[st.fp] = { ...(c.learned[st.fp] || {}), type: 'unknown', slots: { tap: selector } };
+            }
+        }
+        island.render(c, { state: 'running', step: undefined, stop, onSettings: settingsButton });
+        target.click();
+        await waitChange(c, st.sig, 8000);
+        return true;
+    };
+
     const run = async (c) => {
         const stop = () => {
             c.cancelled = true;
+            if (c.choiceResolve) c.choiceResolve(-1);
             c.send({ kind: 'finish', status: 'stopped', message: 'Stopped by the user.' });
             island.render(c, { state: 'stopped', message: 'Stopped by the user.', step: c.lastStep });
         };
@@ -1562,7 +1658,10 @@
                 const st = await settle(c);
                 if (c.cancelled) return;
                 remember(c, 'created'); // once the account exists (after the pseudo step) the session is there: save it, not awaited
-                if (st.type === 'unknown') throw new StopRun('unknown', 'Unrecognised screen: nothing was guessed.', describeUnknown(st));
+                if (st.type === 'unknown') {
+                    if (await unknownTap(c, st, stop, settingsButton)) continue;
+                    throw new StopRun('unknown', 'Unrecognised screen: nothing was guessed.', describeUnknown(st));
+                }
                 const { count } = (await c.send({ kind: 'step', fp: st.fp, type: st.type, route: routeKey() })) || { count: 1 };
                 if (count > 3) {
                     c.send({ kind: 'unlearn', fp: st.fp });
@@ -1602,5 +1701,5 @@
         }
     };
 
-    globalThis.__qs = { BUILD, run, classify, handlers, genPseudo, BANNED_RE, resolve, selectorFor, nearestButton, island };
+    globalThis.__qs = { BUILD, run, classify, handlers, unknownTap, ctaButton, genPseudo, BANNED_RE, resolve, selectorFor, nearestButton, island };
 })();
