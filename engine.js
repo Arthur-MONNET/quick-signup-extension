@@ -991,16 +991,36 @@
             const stray = st.fs.find((e) => e.type === 'checkbox' && !CONSENT_RE.test(`${e.name} ${e.id}`));
             if (stray) throw new StopRun('unknown', `Unexpected checkbox "${stray.name || stray.id || 'unnamed'}": only the legal consents are ticked`);
             const field = need(slot(c, st, 'field', () => resolve('input[name=email]') || st.fs.find((e) => e.type === 'email')), 'email input');
-            setValue(field, c.vars.email);
+            // Typed like a person, then the field is left (blur, change): many forms validate the address (and ask the server) only then.
+            await typeText(field, c.vars.email);
             verify(field, c.vars.email, 'The e-mail');
-            await sleep(300);
-            // Tick every consent box (some appear once the e-mail is typed), then wait for the submit button to turn enabled.
-            for (const box of fields().filter((e) => e.type === 'checkbox')) await ensureChecked(box);
-            await sleep(400);
+            const leave = () => {
+                field.dispatchEvent(new Event('change', { bubbles: true }));
+                field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+                field.dispatchEvent(new FocusEvent('blur'));
+                field.blur();
+            };
+            leave();
+            // Let the validation answer (a network call finishing) before touching the boxes, like a person who reads the screen.
+            const calls = () => performance.getEntriesByType('resource').filter((r) => /fetch|xmlhttprequest/.test(r.initiatorType)).length;
+            const before = calls();
+            await sleep(1200);
+            for (let t = 0; t < 15 && calls() === before; t++) await sleep(200);
+            await sleep(800);
+            // Tick every consent box slowly (some appear once the e-mail is accepted).
+            for (const box of fields().filter((e) => e.type === 'checkbox')) {
+                await ensureChecked(box);
+                await sleep(600);
+            }
+            // The submit button can stay disabled for a long time: wait up to 20 s, leaving the e-mail field again once if it hangs.
             const next = nextButton(c, st);
-            for (let t = 0; t < 30 && (next.disabled || next.getAttribute('aria-disabled') === 'true'); t++) await sleep(150);
-            if (next.disabled) throw new StopRun('stuck', 'The e-mail step button stayed disabled after the e-mail and the consent boxes: the page does not consider the form valid.', describeUnknown(st));
-            await sleep(200);
+            const disabled = () => next.disabled || next.getAttribute('aria-disabled') === 'true' || /disabled/.test(String(next.className));
+            for (let t = 0; t < 133 && disabled(); t++) {
+                await sleep(150);
+                if (t === 40) leave();
+            }
+            if (disabled()) throw new StopRun('stuck', 'The e-mail step button stayed disabled for 20 s after the e-mail and the consent boxes: the page does not consider the form valid.', describeUnknown(st));
+            await sleep(500);
             next.click();
         },
         onepage: async (c, st) => {
