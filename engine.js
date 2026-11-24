@@ -987,15 +987,21 @@
             nextButton(c, st).click();
         },
         email: async (c, st) => {
-            const boxes = st.fs.filter((e) => e.type === 'checkbox');
-            const stray = boxes.find((e) => !/^accept_(cguv|privacy_policy)$/.test(e.name));
-            if (stray) throw new StopRun('unknown', `Unexpected checkbox "${stray.name || 'unnamed'}": only the two required consents are ticked`);
+            // Legal consents only (by name or id): anything else (newsletter...) stops the run rather than being ticked.
+            const stray = st.fs.find((e) => e.type === 'checkbox' && !CONSENT_RE.test(`${e.name} ${e.id}`));
+            if (stray) throw new StopRun('unknown', `Unexpected checkbox "${stray.name || stray.id || 'unnamed'}": only the legal consents are ticked`);
             const field = need(slot(c, st, 'field', () => resolve('input[name=email]') || st.fs.find((e) => e.type === 'email')), 'email input');
             setValue(field, c.vars.email);
             verify(field, c.vars.email, 'The e-mail');
-            for (const box of boxes) await ensureChecked(box);
+            await sleep(300);
+            // Tick every consent box (some appear once the e-mail is typed), then wait for the submit button to turn enabled.
+            for (const box of fields().filter((e) => e.type === 'checkbox')) await ensureChecked(box);
+            await sleep(400);
+            const next = nextButton(c, st);
+            for (let t = 0; t < 30 && (next.disabled || next.getAttribute('aria-disabled') === 'true'); t++) await sleep(150);
+            if (next.disabled) throw new StopRun('stuck', 'The e-mail step button stayed disabled after the e-mail and the consent boxes: the page does not consider the form valid.', describeUnknown(st));
             await sleep(200);
-            nextButton(c, st).click();
+            next.click();
         },
         onepage: async (c, st) => {
             // The promotool register form on one screen. Fills whatever of gender, age, e-mail, pseudo and consent is there, in any
