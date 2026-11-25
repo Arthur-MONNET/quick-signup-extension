@@ -21,8 +21,9 @@ export const citySuggestionPattern = (city) => `^${city.replace(/[.*+?^${}()|[\]
 
 // Profile photo: an AI-generated face from this-person-does-not-exist.com (fetched by the service worker only).
 export const PHOTO_ORIGIN = 'https://this-person-does-not-exist.com';
-// The site offers 12-18, 19-25, 26-35, 35-50 and 50: members are adults, so the lowest bucket is never used.
-export const photoAgeRange = (age) => (age <= 25 ? '19-25' : age <= 35 ? '26-35' : age <= 50 ? '35-50' : '50');
+// The site offers 12-18, 19-25, 26-35, 35-50 and 50. Its age labels are approximate: 12-18 and 19-25 both return
+// faces that look like minors, so only 26-35 and older are ever requested (a 24-year-old member gets a 26-35 face).
+export const photoAgeRange = (age) => (age <= 35 ? '26-35' : age <= 50 ? '35-50' : '50');
 export const photoQuery = (gender, age) => `time=${Date.now()}&gender=${gender === 'woman' ? 'female' : 'male'}&age=${photoAgeRange(age)}&etnic=all`;
 
 // Test accounts are recognisable by their e-mail: test-<DDMM>-<HHmm>-<3 random chars>@domain (unique per attempt, no counter to keep).
