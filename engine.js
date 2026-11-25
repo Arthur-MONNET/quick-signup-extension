@@ -1974,7 +1974,7 @@
                 island.form(c, {
                     state: 'choose',
                     title: 'New account',
-                    intro: [location.hostname, c.signedInNote, c.updated ? `✓ Quick Signup updated to v${c.updated}` : ''].filter(Boolean).join('\n'),
+                    intro: [location.hostname, c.signedInNote].filter(Boolean).join('\n'),
                     fields: fieldsNow,
                     submit: 'Start',
                     onCancel: () => {

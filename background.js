@@ -455,12 +455,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     return {
                         resume: true,
                         build: BUILD,
-                        updated: await (async () => {
-                            const { justUpdated } = await local.get('justUpdated');
-                            if (!justUpdated) return null;
-                            await local.remove('justUpdated');
-                            return Date.now() - justUpdated.at < 3600_000 ? justUpdated.to : null;
-                        })(),
+                        updated: (showUpdated(tabId), null),
                         setup: run.status === 'setup',
                         choose: run.status === 'setup' || run.status === 'choose',
                         prefs: await getPrefs(),
@@ -645,18 +640,22 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // A short notice in the page when nothing can start (injected with the temporary access the click gives, never the engine).
-const notice = (tabId, text) =>
+// tone 'ok': a green confirmation pill at the bottom of the page, so it never covers the bar.
+const notice = (tabId, text, tone) =>
     chrome.scripting
         .executeScript({
             target: { tabId },
-            args: [text],
-            func: (message) => {
+            args: [text, tone || ''],
+            func: (message, tone) => {
                 const host = document.createElement('div');
-                host.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2147483647;';
+                host.style.cssText = `position:fixed;${tone === 'ok' ? 'bottom:24px' : 'top:0'};left:50%;transform:translateX(-50%);z-index:2147483647;`;
                 const shadow = host.attachShadow({ mode: 'closed' });
                 const box = document.createElement('div');
                 box.textContent = message;
-                box.style.cssText = 'background:#1b1e24;color:#e8eaed;font:12.5px/1.45 -apple-system,system-ui,sans-serif;padding:8px 16px;border:1px solid #2d3139;border-top:0;border-radius:0 0 12px 12px;box-shadow:0 6px 22px rgba(0,0,0,.3);max-width:min(94vw,460px)';
+                box.style.cssText =
+                    tone === 'ok'
+                        ? 'background:#1b1e24;color:#56d364;font:600 12.5px/1.45 -apple-system,system-ui,sans-serif;padding:8px 16px;border:1px solid rgba(63,185,80,.55);border-radius:999px;box-shadow:0 6px 22px rgba(0,0,0,.3);max-width:min(94vw,460px)'
+                        : 'background:#1b1e24;color:#e8eaed;font:12.5px/1.45 -apple-system,system-ui,sans-serif;padding:8px 16px;border:1px solid #2d3139;border-top:0;border-radius:0 0 12px 12px;box-shadow:0 6px 22px rgba(0,0,0,.3);max-width:min(94vw,460px)';
                 shadow.append(box);
                 document.documentElement.append(host);
                 setTimeout(() => host.remove(), 6000);
@@ -747,9 +746,29 @@ const applyUpdate = async (resumeTabId, force = false) => {
     chrome.runtime.reload();
     return true;
 };
-chrome.alarms.create('qs-update', { periodInMinutes: 30 });
+// Created once: re-creating it on every worker start would push the first check back each time.
+chrome.alarms.get('qs-update').then((alarm) => alarm || chrome.alarms.create('qs-update', { periodInMinutes: 5 }));
 chrome.alarms.onAlarm.addListener((alarm) => alarm.name === 'qs-update' && applyUpdate());
 chrome.runtime.onStartup.addListener(() => applyUpdate());
+// "✓ Quick Signup updated to vX", once: on the page in front right after an automatic update, otherwise on the next page the bar
+// opens on. Returns true when it was shown.
+const showUpdated = async (tabId) => {
+    const { justUpdated } = await local.get('justUpdated');
+    if (!justUpdated) return false;
+    if (Date.now() - justUpdated.at > 24 * 3600_000) {
+        await local.remove('justUpdated');
+        return false;
+    }
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab || !/^https?:/.test(tab.url || '')) return false;
+    await local.remove('justUpdated');
+    await notice(tabId, `✓ Quick Signup updated to v${justUpdated.to}`, 'ok');
+    return true;
+};
+(async () => {
+    const [front] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    if (front && front.id !== undefined) await showUpdated(front.id);
+})();
 // After an update: the click that triggered it starts its run now.
 (async () => {
     const { resumeTab } = await local.get('resumeTab');
