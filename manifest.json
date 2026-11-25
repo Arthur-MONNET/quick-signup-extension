@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quick Signup (test accounts)",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "One-click test sign-up on the candyshop network (preprod first). Never pays. Updates itself daily.",
   "minimum_chrome_version": "116",
   "permissions": [
