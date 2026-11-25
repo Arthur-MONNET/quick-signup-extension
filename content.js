@@ -25,9 +25,9 @@
     }
     // The engine file is fresh from disk, the service worker is only refreshed by "reload" in the extensions page: refuse to mix them.
     if (hello.build !== globalThis.__qs.BUILD) {
-        const message = 'The extension was updated on disk but not reloaded: reload it in the extensions page, then click the icon again.';
-        send({ kind: 'finish', status: 'error', message });
-        globalThis.__qs.island.render({ vars: {}, pseudo: '' }, { state: 'error', message, step: undefined });
+        // A new version was just pulled: the worker reloads itself and starts again in this tab.
+        globalThis.__qs.island.render({ vars: {}, pseudo: '' }, { state: 'running', message: 'Quick Signup was updated: restarting…', step: undefined });
+        send({ kind: 'applyUpdate' });
         globalThis.__qsLoop = false;
         return;
     }
@@ -35,6 +35,7 @@
     const ctx = {
         vars: hello.vars,
         needsSetup: Boolean(hello.setup),
+        updated: hello.updated || null,
         needsChoice: Boolean(hello.choose),
         prefs: hello.prefs || {},
         hasPassword: Boolean(hello.hasPassword),

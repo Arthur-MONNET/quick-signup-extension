@@ -11,7 +11,7 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const OVERLAY_ID = 'qs-overlay';
-    const BUILD = '22'; // see background.js
+    const BUILD = '23'; // see background.js
 
     // ---- Page helpers -------------------------------------------------------------------------------------------------
     const shown = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -898,6 +898,10 @@
                     };
                     view();
                     formBox.append(box);
+                    continue;
+                }
+                if (f.kind === 'note') {
+                    formBox.append(el('p', 'hint', f.text));
                     continue;
                 }
                 if (f.kind === 'switch') {
@@ -1970,7 +1974,7 @@
                 island.form(c, {
                     state: 'choose',
                     title: 'New account',
-                    intro: c.signedInNote ? `${location.hostname}\n${c.signedInNote}` : location.hostname,
+                    intro: [location.hostname, c.signedInNote, c.updated ? `✓ Quick Signup updated to v${c.updated}` : ''].filter(Boolean).join('\n'),
                     fields: fieldsNow,
                     submit: 'Start',
                     onCancel: () => {
@@ -2075,6 +2079,7 @@
                         return result ? result.error : 'Could not toggle media blur.';
                     },
                 },
+                { key: 'version', kind: 'note', text: `Quick Signup v${current.version || '?'} · updates itself every day` },
             ],
         });
     };

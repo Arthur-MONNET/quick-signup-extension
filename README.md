@@ -4,9 +4,18 @@ Inscription de test en un clic sur les sites du réseau candyshop (preprod en pr
 
 ## Installation
 
-1. Ouvrir `chrome://extensions`, activer le **mode développeur**.
-2. **Charger l'extension non empaquetée** et choisir ce dossier.
-3. Épingler l'icône dans la barre d'outils (facultatif).
+Page d'installation : **https://arthur-monnet.github.io/quick-signup-extension/**
+
+1. Dans le Terminal :
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/Arthur-MONNET/quick-signup-extension/stable/install.sh | bash
+   ```
+   L'extension est installée dans `~/QuickSignup` (avec git s'il est présent, sinon par archive), avec une tâche quotidienne (launchd, 10 h et à chaque ouverture de session) qui la met à jour.
+2. Dans le navigateur, une seule fois : `chrome://extensions` → **Developer mode** → **Load unpacked** → dossier `QuickSignup`.
+
+**Mises à jour** : rien à faire. `scripts/update.sh` récupère la branche `stable` ; l'extension voit la nouvelle version sur le disque (son `manifest.json`) et se recharge seule, jamais pendant une inscription (au plus tard au clic suivant sur l'icône, qui reprend ensuite normalement). Journal : `~/Library/Logs/QuickSignup.log`. Désinstaller : `bash ~/QuickSignup/scripts/uninstall.sh`.
+
+**Publier une version** (développeur) : monter `version` dans `manifest.json` (et `BUILD` dans `background.js` / `engine.js` si les deux changent), pousser sur `main`, puis `git push origin main:stable`. Seule la branche `stable` est diffusée ; la page d'installation est servie depuis `docs/` sur `main`.
 
 ## Premier réglage (dans la barre, au premier lancement)
 

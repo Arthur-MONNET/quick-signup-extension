@@ -8,7 +8,7 @@ const session = chrome.storage.session;
 const LOG_LIMIT = 40;
 const MEDIA_BLUR_MENU = 'toggle-media-blur';
 // Must equal BUILD in engine.js: the engine is read from disk on every page, the worker only when the extension is reloaded.
-const BUILD = '22';
+const BUILD = '23';
 // A run waits for the first-use setup ('setup'), then for the choice of the account to create ('choose'), then runs.
 const ACTIVE = ['setup', 'choose', 'running'];
 
@@ -367,7 +367,7 @@ const startRun = async (tabId) => {
 const handleSettings = async (message, tabId, run) => {
     const current = await getSettings();
     const formatsView = (settings) => ({ emailFormats: settings.emailFormats.map((f) => ({ ...f, example: renderEmail(f.template, settings.emailDomain || 'example.com') })), defaultFormatId: settings.defaultFormatId });
-    if (message.kind === 'settings') return { emailDomain: current.emailDomain, hasPassword: Boolean(current.password), ...formatsView(current) };
+    if (message.kind === 'settings') return { version: chrome.runtime.getManifest().version, emailDomain: current.emailDomain, hasPassword: Boolean(current.password), ...formatsView(current) };
     if (message.kind === 'previewFormat') {
         const problem = validateTemplate(message.template, current.emailDomain || 'example.com');
         return problem ? { error: problem } : { example: renderEmail(message.template, current.emailDomain || 'example.com') };
@@ -433,7 +433,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Messages of an older page instance (the page was replaced by a redirect) must not end or drive the run of the new one.
             if (run && run.engine && message.from && message.kind !== 'hello' && message.from !== run.engine) return { resume: false, error: `stale page instance ignored (message "${message.kind}")` };
             if (!run || !ACTIVE.includes(run.status)) return { resume: false, error: `no active run for this tab (${run ? `status: ${run.status}, reason: ${String(run.message || 'none').slice(0, 140)}` : 'none stored'}; tab ${tabId}; message "${message.kind}")` };
-            const allowedBefore = { setup: ['hello', 'finish'], choose: ['hello', 'choose', 'finish'] };
+            const allowedBefore = { setup: ['hello', 'finish', 'applyUpdate'], choose: ['hello', 'choose', 'finish', 'applyUpdate'] };
             if (run.status !== 'running' && !(allowedBefore[run.status] || []).includes(message.kind)) return { resume: false, error: `run is "${run.status}", message "${message.kind}" refused` };
             switch (message.kind) {
                 case 'hello': {
@@ -455,6 +455,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     return {
                         resume: true,
                         build: BUILD,
+                        updated: await (async () => {
+                            const { justUpdated } = await local.get('justUpdated');
+                            if (!justUpdated) return null;
+                            await local.remove('justUpdated');
+                            return Date.now() - justUpdated.at < 3600_000 ? justUpdated.to : null;
+                        })(),
                         setup: run.status === 'setup',
                         choose: run.status === 'setup' || run.status === 'choose',
                         prefs: await getPrefs(),
@@ -517,6 +523,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 case 'finish':
                     await finishRun(tabId, message.status, message.message, message.unknown);
+                    setTimeout(() => applyUpdate(), 8000); // an update that waited for this run (the result stays on screen a moment)
+                    return {};
+                case 'applyUpdate':
+                    // The engine on disk is newer than this worker: reload now and restart in this tab.
+                    await applyUpdate(tabId, true);
                     return {};
                 case 'photoHook': {
                     // Lets the page's own "add photo" click receive the generated image instead of opening the native file dialog.
@@ -701,12 +712,60 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // One click on the icon (or the shortcut) starts everything: the bar in the page takes it from there.
+// ---- Updates ---------------------------------------------------------------------------------------------------------------
+// The folder is kept up to date by scripts/update.sh (a daily launchd job installed by install.sh). The worker compares the version
+// on disk with the one it runs and reloads itself when they differ and no sign-up is running, so testers never touch anything.
+const newerThan = (a, b) => {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+    return false;
+};
+const diskVersion = async () => {
+    try {
+        return (await (await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' })).json()).version || null;
+    } catch {
+        return null;
+    }
+};
+// A sign-up in progress in a tab that still exists blocks the reload (it would cut the run).
+const signUpRunning = async () => {
+    const all = await session.get(null);
+    for (const [key, run] of Object.entries(all)) {
+        if (!key.startsWith('run:') || !run || run.status !== 'running') continue;
+        if (await chrome.tabs.get(Number(key.slice(4))).then(() => true, () => false)) return true;
+    }
+    return false;
+};
+// resumeTabId: start a run in that tab right after the reload (the click that found the update is not lost).
+const applyUpdate = async (resumeTabId, force = false) => {
+    const disk = await diskVersion();
+    const running = chrome.runtime.getManifest().version;
+    if (!force && (!disk || !newerThan(disk, running))) return false;
+    if (!force && (await signUpRunning())) return false;
+    await local.set({ justUpdated: { from: running, to: disk || running, at: Date.now() }, resumeTab: resumeTabId ?? null });
+    chrome.runtime.reload();
+    return true;
+};
+chrome.alarms.create('qs-update', { periodInMinutes: 30 });
+chrome.alarms.onAlarm.addListener((alarm) => alarm.name === 'qs-update' && applyUpdate());
+chrome.runtime.onStartup.addListener(() => applyUpdate());
+// After an update: the click that triggered it starts its run now.
+(async () => {
+    const { resumeTab } = await local.get('resumeTab');
+    if (resumeTab === undefined || resumeTab === null) return;
+    await local.remove('resumeTab');
+    const tab = await chrome.tabs.get(resumeTab).catch(() => null);
+    if (tab) trigger(tab);
+})();
+
 const trigger = async (tab) => {
     if (!tab || tab.id === undefined) return;
     // Asked first, in the click's user gesture: some browsers keep an unpacked extension's site access on demand. No prompt when granted.
     chrome.permissions.request({ origins: [`${PHOTO_ORIGIN}/*`] }).catch(() => false);
     const host = hostOf(tab.url || '');
     const run = await getRun(tab.id);
+    if (!(run && ACTIVE.includes(run.status)) && (await applyUpdate(tab.id))) return;
     if (run && ACTIVE.includes(run.status)) {
         // Already running here: just bring the bar into view (Stop lives in the bar).
         await chrome.tabs.sendMessage(tab.id, { kind: 'reveal' }).catch(() => undefined);

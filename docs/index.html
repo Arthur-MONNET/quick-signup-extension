@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Signup</title>
+<meta name="description" content="Crée un compte de test en un clic sur les sites du réseau. Ne paie jamais.">
+<link rel="icon" href="icon128.png">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1e24;--muted:#5d6672;--line:#e3e6eb;--code:#1b1e24;--codeink:#e8eaed;--accent:#2f6feb;--ok:#2da44e}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1115;--card:#171a20;--ink:#e8eaed;--muted:#9aa1ab;--line:#2a2f38;--code:#0b0d10;--codeink:#e8eaed}}
+:root[data-theme=dark]{--bg:#0f1115;--card:#171a20;--ink:#e8eaed;--muted:#9aa1ab;--line:#2a2f38;--code:#0b0d10;--codeink:#e8eaed}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:56px 20px 40px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+header img{width:44px;height:44px;border-radius:10px}
+h1{margin:0;font-size:28px;letter-spacing:-.01em}
+.lead{margin:0 0 36px;color:var(--muted);font-size:16px}
+.step{display:grid;grid-template-columns:32px 1fr;gap:4px 14px;padding:22px;background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:14px}
+.step>*{min-width:0}
+.num{grid-row:1 / span 3;width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700}
+h2{margin:4px 0 2px;font-size:17px}
+.step p{margin:0 0 10px;color:var(--muted)}
+.cmd{display:flex;align-items:center;gap:10px;background:var(--code);color:var(--codeink);border-radius:10px;padding:10px 10px 10px 14px}
+.cmd code{flex:1;min-width:0;font:13px ui-monospace,Menlo,monospace;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.copy{flex:none;font:inherit;font-size:13px;font-weight:600;border:0;border-radius:7px;padding:7px 14px;background:var(--accent);color:#fff;cursor:pointer;min-width:86px}
+.copy.done{background:var(--ok)}
+ol{margin:0;padding-left:20px;color:var(--muted)}
+ol li{margin:4px 0}
+ol b,.step p b{color:var(--ink)}
+kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--ink);background:var(--bg)}
+.chip{font:12.5px ui-monospace,Menlo,monospace;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:1px 6px;cursor:pointer}
+.auto{display:flex;gap:12px;align-items:flex-start;padding:16px 20px;border-radius:14px;border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 9%,transparent);margin:22px 0 14px}
+.auto svg{flex:none;width:22px;height:22px;color:var(--ok);margin-top:1px}
+.auto p{margin:0}
+.auto b{display:block}
+footer{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13.5px}
+footer details summary{cursor:pointer;color:var(--ink)}
+footer .cmd{margin-top:10px}
+footer a{color:var(--accent)}
+@media (max-width:520px){main{padding-top:32px}.step{grid-template-columns:1fr;padding:18px}.num{grid-row:auto;margin-bottom:4px}.cmd{flex-direction:column;align-items:stretch}.copy{min-height:40px}}
+</style>
+</head>
+<body>
+<main>
+<header><img src="icon128.png" alt=""><h1>Quick Signup</h1></header>
+<p class="lead">Crée un compte de test en un clic sur les sites du réseau. Ne paie jamais.</p>
+
+<section class="step">
+<span class="num">1</span>
+<h2>Installer</h2>
+<p>Ouvre le <b>Terminal</b> (<kbd>⌘</kbd> <kbd>Espace</kbd>, tape « Terminal »), colle cette ligne et appuie sur <kbd>Entrée</kbd>.</p>
+<div class="cmd"><code id="install">curl -fsSL https://raw.githubusercontent.com/Arthur-MONNET/quick-signup-extension/stable/install.sh | bash</code><button class="copy" data-for="install" type="button">Copier</button></div>
+</section>
+
+<section class="step">
+<span class="num">2</span>
+<h2>Ajouter au navigateur</h2>
+<p>Une seule fois, dans Chrome, Dia, Arc ou Brave :</p>
+<ol>
+<li>Ouvre <span class="chip" data-copy="chrome://extensions" title="Copier">chrome://extensions</span> dans la barre d'adresse.</li>
+<li>Active <b>Developer mode</b> (en haut à droite).</li>
+<li><b>Load unpacked</b> → <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>H</kbd> → dossier <b>QuickSignup</b>.</li>
+</ol>
+</section>
+
+<section class="step">
+<span class="num">3</span>
+<h2>Utiliser</h2>
+<p>Sur un site du réseau, clique sur l'icône <b>Quick Signup</b>, choisis <b>Man</b> ou <b>Woman</b>, puis <b>Start</b>. La barre en haut de la page suit l'inscription.</p>
+</section>
+
+<div class="auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><p><b>Mises à jour : rien à faire</b>L'extension vérifie chaque jour et se recharge toute seule, jamais pendant une inscription.</p></div>
+
+<footer>
+<details><summary>Désinstaller</summary>
+<div class="cmd"><code id="uninstall">bash ~/QuickSignup/scripts/uninstall.sh</code><button class="copy" data-for="uninstall" type="button">Copier</button></div>
+<p>Puis <b>Remove</b> sur l'extension dans <span class="chip" data-copy="chrome://extensions">chrome://extensions</span>.</p>
+</details>
+<p><a href="https://github.com/Arthur-MONNET/quick-signup-extension">Code source sur GitHub</a></p>
+</footer>
+</main>
+<script>
+const copy = async (text, button) => {
+    try { await navigator.clipboard.writeText(text); } catch { return; }
+    if (!button) return;
+    const label = button.textContent;
+    button.textContent = 'Copié ✓';
+    button.classList.add('done');
+    setTimeout(() => { button.textContent = label; button.classList.remove('done'); }, 1600);
+};
+document.querySelectorAll('.copy').forEach((b) => b.addEventListener('click', () => copy(document.getElementById(b.dataset.for).textContent, b)));
+document.querySelectorAll('[data-copy]').forEach((c) => c.addEventListener('click', () => copy(c.dataset.copy)));
+</script>
+</body>
+</html>
